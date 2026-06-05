@@ -2,6 +2,21 @@
   overflow: hidden;
 }
 
+.lavoc-native-cart-suppressed cart-drawer,
+.lavoc-native-cart-suppressed cart-notification,
+.lavoc-native-cart-suppressed #CartDrawer,
+.lavoc-native-cart-suppressed #cart-drawer,
+.lavoc-native-cart-suppressed .cart-drawer,
+.lavoc-native-cart-suppressed .drawer--cart,
+.lavoc-native-cart-suppressed [data-cart-drawer],
+.lavoc-native-cart-suppressed .cart-drawer__overlay,
+.lavoc-native-cart-suppressed .drawer__overlay,
+.lavoc-native-cart-suppressed #CartDrawer-Overlay {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
+}
+
 .lavoc-cart-shell {
   --lavoc-cart-accent: #7c6243;
   --lavoc-cart-bg: #fffaf4;

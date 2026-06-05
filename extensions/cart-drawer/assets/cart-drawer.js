@@ -13,6 +13,11 @@
     busy: false
   };
 
+  function isCartMutationUrl(value) {
+    var url = String(value || "");
+    return /\/cart\/(add|change|update|clear)(\.js)?(\?|$)/.test(url);
+  }
+
   function cartUrl(path) {
     var root = (window.Shopify && window.Shopify.routes && window.Shopify.routes.root) || "/";
     return root.replace(/\/$/, "/") + path.replace(/^\//, "");
@@ -224,6 +229,7 @@
 
   function openDrawer() {
     if (!state.ready || state.config.enabled === false) return;
+    closeNativeDrawer();
     state.open = true;
     render();
     refreshCart();
@@ -232,6 +238,50 @@
   function closeDrawer() {
     state.open = false;
     render();
+  }
+
+  function closeNativeDrawer() {
+    document.documentElement.classList.add("lavoc-native-cart-suppressed");
+    document.body.classList.add("lavoc-native-cart-suppressed");
+
+    [
+      "cart-drawer",
+      "cart-notification",
+      "#CartDrawer",
+      "#cart-drawer",
+      ".cart-drawer",
+      ".drawer--cart",
+      "[data-cart-drawer]",
+      "[aria-modal='true'][id*='cart' i]",
+      "[aria-modal='true'][class*='cart' i]"
+    ].forEach(function (selector) {
+      document.querySelectorAll(selector).forEach(function (node) {
+        if (node === mount || mount.contains(node)) return;
+        node.setAttribute("aria-hidden", "true");
+        node.classList.remove("animate", "active", "open", "is-open", "drawer--is-open");
+        node.removeAttribute("open");
+      });
+    });
+
+    [
+      ".cart-drawer__overlay",
+      ".drawer__overlay",
+      "#CartDrawer-Overlay",
+      ".modal-overlay"
+    ].forEach(function (selector) {
+      document.querySelectorAll(selector).forEach(function (node) {
+        if (mount.contains(node)) return;
+        node.setAttribute("aria-hidden", "true");
+      });
+    });
+  }
+
+  function scheduleOpenAfterCartMutation() {
+    window.setTimeout(function () {
+      refreshCart().then(function () {
+        openDrawer();
+      });
+    }, 150);
   }
 
   function changeLine(lineKey, quantity) {
@@ -296,13 +346,36 @@
     var target = event.target;
     if (!(target instanceof Element)) return;
     var trigger = target.closest(
-      'a[href="/cart"], a[href$="/cart"], #cart-icon-bubble, [aria-controls="cart-drawer"], [data-cart-drawer-toggle], [data-cart-toggle]'
+      'a[href="/cart"], a[href$="/cart"], a[href*="/cart?"], #cart-icon-bubble, [aria-controls="cart-drawer"], [aria-controls="CartDrawer"], [data-cart-drawer-toggle], [data-cart-toggle], [data-drawer-id*="cart" i], [data-drawer-trigger*="cart" i]'
     );
 
     if (!trigger || !state.ready || state.config.enabled === false) return;
     event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
     openDrawer();
-  });
+  }, true);
+
+  document.addEventListener("submit", function (event) {
+    var target = event.target;
+    if (!(target instanceof HTMLFormElement)) return;
+    var action = target.getAttribute("action") || "";
+    if (!/\/cart\/add/.test(action) || !state.ready || state.config.enabled === false) return;
+    scheduleOpenAfterCartMutation();
+  }, true);
+
+  var originalFetch = window.fetch;
+  window.fetch = function () {
+    var input = arguments[0];
+    var url = typeof input === "string" ? input : input && input.url;
+    var isMutation = isCartMutationUrl(url);
+    return originalFetch.apply(this, arguments).then(function (response) {
+      if (isMutation && response.ok && state.ready && state.config.enabled !== false) {
+        scheduleOpenAfterCartMutation();
+      }
+      return response;
+    });
+  };
 
   document.addEventListener("keydown", function (event) {
     if (event.key === "Escape" && state.open) closeDrawer();
