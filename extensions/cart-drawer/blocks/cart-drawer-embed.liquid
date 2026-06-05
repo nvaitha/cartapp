@@ -1,0 +1,27 @@
+{% comment %}
+  LavocDerma Cart Drawer App Embed
+{% endcomment %}
+
+<div
+  id="lavoc-cart-drawer-app"
+  data-shop="{{ shop.permanent_domain }}"
+  data-app-url="{{ block.settings.app_url }}"
+  data-theme="{{ theme.name | escape }}"
+></div>
+
+{% schema %}
+{
+  "name": "LavocDerma Cart Drawer",
+  "target": "body",
+  "javascript": "cart-drawer.js",
+  "stylesheet": "cart-drawer.css",
+  "settings": [
+    {
+      "type": "text",
+      "id": "app_url",
+      "label": "App URL",
+      "default": "http://localhost:3000"
+    }
+  ]
+}
+{% endschema %}

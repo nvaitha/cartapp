@@ -1,0 +1,26 @@
+name = "LavocDerma Cart Drawer"
+client_id = "<new_cart_app_client_id>"
+application_url = "http://localhost:3000"
+embedded = true
+
+[access_scopes]
+scopes = "read_products"
+
+[auth]
+redirect_urls = [
+  "http://localhost:3000/api/auth/callback"
+]
+
+[webhooks]
+api_version = "2026-01"
+
+[[webhooks.subscriptions]]
+topics = [ "app/uninstalled" ]
+uri = "/api/webhooks/app-uninstalled"
+
+[pos]
+embedded = false
+
+[build]
+automatically_update_urls_on_dev = true
+dev_store_url = "bundleappstore-2.myshopify.com"
