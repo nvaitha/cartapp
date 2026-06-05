@@ -54,13 +54,26 @@ function numericVariantId(variantGid: string) {
 }
 
 async function getIdToken() {
+  const startedAt = Date.now();
+
+  while (!window.shopify?.idToken && Date.now() - startedAt < 5000) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
   const shopify = window.shopify;
   if (!shopify?.idToken) return null;
 
-  return Promise.race([
-    shopify.idToken(),
-    new Promise<null>((resolve) => setTimeout(() => resolve(null), 1000)),
-  ]);
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const token = await Promise.race([
+      shopify.idToken(),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 1000)),
+    ]);
+
+    if (token) return token;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  return null;
 }
 
 async function adminFetch(path: string, init?: RequestInit) {
