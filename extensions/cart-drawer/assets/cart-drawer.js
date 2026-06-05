@@ -12,6 +12,7 @@
     open: false,
     busy: false
   };
+  var nativeOpenTimer = null;
 
   function isCartMutationUrl(value) {
     var url = String(value || "");
@@ -277,6 +278,15 @@
   }
 
   function scheduleOpenAfterCartMutation() {
+    if (nativeOpenTimer) window.clearTimeout(nativeOpenTimer);
+    nativeOpenTimer = window.setTimeout(function () {
+      closeNativeDrawer();
+      if (!state.open) {
+        state.open = true;
+        render();
+      }
+    }, 50);
+
     window.setTimeout(function () {
       refreshCart().then(function () {
         openDrawer();
@@ -377,6 +387,67 @@
     });
   };
 
+  var OriginalXHR = window.XMLHttpRequest;
+  if (OriginalXHR) {
+    window.XMLHttpRequest = function () {
+      var xhr = new OriginalXHR();
+      var cartMutation = false;
+      var originalOpen = xhr.open;
+      xhr.open = function (method, url) {
+        cartMutation = isCartMutationUrl(url);
+        return originalOpen.apply(xhr, arguments);
+      };
+      xhr.addEventListener("load", function () {
+        if (cartMutation && xhr.status >= 200 && xhr.status < 300 && state.ready && state.config.enabled !== false) {
+          scheduleOpenAfterCartMutation();
+        }
+      });
+      return xhr;
+    };
+  }
+
+  function nativeDrawerLooksOpen(node) {
+    if (!(node instanceof Element) || node === mount || mount.contains(node)) return false;
+    var text = ((node.id || "") + " " + (node.className || "")).toLowerCase();
+    if (text.indexOf("cart") === -1 && node.tagName.toLowerCase().indexOf("cart") === -1) return false;
+    if (node.getAttribute("aria-hidden") === "false") return true;
+    if (node.hasAttribute("open")) return true;
+    return /\b(active|open|is-open|drawer--is-open|animate)\b/.test(text);
+  }
+
+  function watchNativeDrawer() {
+    if (!window.MutationObserver) return;
+    var observer = new MutationObserver(function (mutations) {
+      if (!state.ready || state.config.enabled === false || state.open) return;
+      for (var i = 0; i < mutations.length; i += 1) {
+        var target = mutations[i].target;
+        if (nativeDrawerLooksOpen(target)) {
+          scheduleOpenAfterCartMutation();
+          return;
+        }
+        for (var j = 0; j < mutations[i].addedNodes.length; j += 1) {
+          var node = mutations[i].addedNodes[j];
+          if (nativeDrawerLooksOpen(node)) {
+            scheduleOpenAfterCartMutation();
+            return;
+          }
+        }
+      }
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class", "open", "aria-hidden", "style"],
+      childList: true,
+      subtree: true
+    });
+  }
+
+  window.LavocCartDrawer = {
+    open: openDrawer,
+    close: closeDrawer,
+    refresh: refreshCart
+  };
+
   document.addEventListener("keydown", function (event) {
     if (event.key === "Escape" && state.open) closeDrawer();
   });
@@ -387,6 +458,7 @@
       state.cart = results[1];
       state.ready = true;
       render();
+      watchNativeDrawer();
     })
     .catch(function (error) {
       console.error("[LavocDerma Cart Drawer]", error);
