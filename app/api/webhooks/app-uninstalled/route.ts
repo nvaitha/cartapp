@@ -23,6 +23,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Missing shop domain" }, { status: 400 });
   }
 
-  await getSupabaseAdmin().from("sessions").delete().eq("shop", shop);
+  await getSupabaseAdmin().from("cart_drawer_sessions").delete().eq("shop", shop);
   return NextResponse.json({ success: true });
 }

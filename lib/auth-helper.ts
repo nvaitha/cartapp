@@ -12,7 +12,7 @@ export async function requireAuth(request: NextRequest): Promise<{ shop: string 
 
   const supabase = getSupabaseAdmin();
   const { data } = await supabase
-    .from("sessions")
+    .from("cart_drawer_sessions")
     .select("shop")
     .eq("shop", payload.shop)
     .single();
@@ -27,7 +27,7 @@ export async function requireAuth(request: NextRequest): Promise<{ shop: string 
 export async function getShopSession(shop: string) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
-    .from("sessions")
+    .from("cart_drawer_sessions")
     .select("shop, access_token, scope")
     .eq("shop", shop)
     .single();

@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
 
   const supabase = getSupabaseAdmin();
   const { data: session } = await supabase
-    .from("sessions")
+    .from("cart_drawer_sessions")
     .select("shop")
     .eq("shop", shop)
     .single();

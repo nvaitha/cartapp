@@ -1,6 +1,6 @@
 -- LavocDerma Cart Drawer App - Initial Schema
 
-CREATE TABLE IF NOT EXISTS sessions (
+CREATE TABLE IF NOT EXISTS cart_drawer_sessions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   shop TEXT UNIQUE NOT NULL,
   access_token TEXT NOT NULL,
@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE TABLE IF NOT EXISTS cart_drawer_configs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  shop TEXT UNIQUE NOT NULL REFERENCES sessions(shop) ON DELETE CASCADE,
+  shop TEXT UNIQUE NOT NULL REFERENCES cart_drawer_sessions(shop) ON DELETE CASCADE,
 
   enabled BOOLEAN NOT NULL DEFAULT true,
 
@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS cart_drawer_configs (
 
 CREATE TABLE IF NOT EXISTS cart_drawer_upsells (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  shop TEXT NOT NULL REFERENCES sessions(shop) ON DELETE CASCADE,
+  shop TEXT NOT NULL REFERENCES cart_drawer_sessions(shop) ON DELETE CASCADE,
   sort_order INT NOT NULL DEFAULT 0,
   product_gid TEXT NOT NULL,
   variant_gid TEXT NOT NULL,
@@ -52,14 +52,14 @@ CREATE TABLE IF NOT EXISTS cart_drawer_upsells (
 CREATE INDEX IF NOT EXISTS cart_drawer_upsells_shop_idx
   ON cart_drawer_upsells (shop, sort_order);
 
-ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE cart_drawer_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cart_drawer_configs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cart_drawer_upsells ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS "block_anon" ON sessions;
+DROP POLICY IF EXISTS "block_anon" ON cart_drawer_sessions;
 DROP POLICY IF EXISTS "block_anon" ON cart_drawer_configs;
 DROP POLICY IF EXISTS "block_anon" ON cart_drawer_upsells;
 
-CREATE POLICY "block_anon" ON sessions FOR ALL TO anon USING (false);
+CREATE POLICY "block_anon" ON cart_drawer_sessions FOR ALL TO anon USING (false);
 CREATE POLICY "block_anon" ON cart_drawer_configs FOR ALL TO anon USING (false);
 CREATE POLICY "block_anon" ON cart_drawer_upsells FOR ALL TO anon USING (false);

@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
   }
 
   const supabase = getSupabaseAdmin();
-  await supabase.from("sessions").upsert(
+  await supabase.from("cart_drawer_sessions").upsert(
     {
       shop: session.shop,
       access_token: session.accessToken,
