@@ -13,6 +13,7 @@
     busy: false
   };
   var nativeOpenTimer = null;
+  var internalCartMutationDepth = 0;
 
   function isCartMutationUrl(value) {
     var url = String(value || "");
@@ -53,6 +54,13 @@
     });
   }
 
+  function withInternalCartMutation(callback) {
+    internalCartMutationDepth += 1;
+    return callback().finally(function () {
+      internalCartMutationDepth = Math.max(0, internalCartMutationDepth - 1);
+    });
+  }
+
   function fetchConfig() {
     if (!state.appUrl || !state.shop) return Promise.reject(new Error("Missing app URL or shop"));
     return fetch(state.appUrl + "/api/public/config?shop=" + encodeURIComponent(state.shop), {
@@ -86,14 +94,16 @@
 
     var remaining = Math.max(0, freeShipping.thresholdCents - cart.total_price);
     var complete = remaining === 0;
-    var width = Math.min(100, Math.round((cart.total_price / freeShipping.thresholdCents) * 100));
+    var width = Math.min(100, Math.max(0, Math.round((cart.total_price / freeShipping.thresholdCents) * 100)));
     var copy = complete
-      ? freeShipping.successMessage
-      : freeShipping.message + " - " + money(remaining) + " away";
+      ? (freeShipping.successMessage || "Free shipping unlocked")
+      : "Spend " + money(remaining) + " more for free shipping";
 
     return (
-      '<div class="lavoc-cart-progress">' +
-      '<div class="lavoc-cart-progress-copy">' + escapeHtml(copy) + "</div>" +
+      '<div class="lavoc-cart-progress' + (complete ? " is-complete" : "") + '">' +
+      '<div class="lavoc-cart-progress-copy">' +
+      (complete ? '<span class="lavoc-cart-progress-icon" aria-hidden="true">✓</span>' : "") +
+      "<span>" + escapeHtml(copy) + "</span></div>" +
       '<div class="lavoc-cart-progress-track"><div class="lavoc-cart-progress-fill" style="width:' +
       width +
       '%"></div></div>' +
@@ -219,13 +229,15 @@
   }
 
   function refreshCart() {
-    return fetchCart().then(function (cart) {
-      state.cart = cart;
-      render();
-      document.dispatchEvent(new CustomEvent("lavoc:cart:updated", { detail: { cart: cart } }));
-      refreshSections();
-      return cart;
-    });
+    return fetchCart().then(applyCart);
+  }
+
+  function applyCart(cart) {
+    state.cart = cart;
+    render();
+    document.dispatchEvent(new CustomEvent("lavoc:cart:updated", { detail: { cart: cart } }));
+    refreshSections();
+    return cart;
   }
 
   function openDrawer() {
@@ -281,31 +293,31 @@
     if (nativeOpenTimer) window.clearTimeout(nativeOpenTimer);
     nativeOpenTimer = window.setTimeout(function () {
       closeNativeDrawer();
-      if (!state.open) {
-        state.open = true;
+      state.open = true;
+      state.busy = true;
+      render();
+      refreshCart().finally(function () {
+        state.busy = false;
         render();
-      }
-    }, 50);
-
-    window.setTimeout(function () {
-      refreshCart().then(function () {
-        openDrawer();
       });
-    }, 150);
+    }, 120);
   }
 
   function changeLine(lineKey, quantity) {
     state.busy = true;
     render();
-    return fetch(cartUrl("cart/change.js"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: lineKey, quantity: Number(quantity) })
+    return withInternalCartMutation(function () {
+      return fetch(cartUrl("cart/change.js"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: lineKey, quantity: Number(quantity) })
+      });
     })
       .then(function (response) {
         if (!response.ok) throw new Error("Cart change failed");
-        return refreshCart();
+        return response.json();
       })
+      .then(applyCart)
       .finally(function () {
         state.busy = false;
         render();
@@ -315,10 +327,12 @@
   function addUpsell(variantId) {
     state.busy = true;
     render();
-    return fetch(cartUrl("cart/add.js"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ items: [{ id: Number(variantId), quantity: 1 }] })
+    return withInternalCartMutation(function () {
+      return fetch(cartUrl("cart/add.js"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: [{ id: Number(variantId), quantity: 1 }] })
+      });
     })
       .then(function (response) {
         if (!response.ok) throw new Error("Upsell add failed");
@@ -380,7 +394,7 @@
     var url = typeof input === "string" ? input : input && input.url;
     var isMutation = isCartMutationUrl(url);
     return originalFetch.apply(this, arguments).then(function (response) {
-      if (isMutation && response.ok && state.ready && state.config.enabled !== false) {
+      if (isMutation && response.ok && !internalCartMutationDepth && state.ready && state.config.enabled !== false) {
         scheduleOpenAfterCartMutation();
       }
       return response;

@@ -53,6 +53,20 @@ function numericVariantId(variantGid: string) {
   return variantGid.split("/").pop() ?? variantGid;
 }
 
+function centsToDollarInput(cents: number) {
+  const dollars = cents / 100;
+  if (!Number.isFinite(dollars)) return "0";
+  return Number.isInteger(dollars)
+    ? String(dollars)
+    : dollars.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function dollarsToCents(value: string) {
+  const dollars = Number(value.replace(/[^0-9.]/g, ""));
+  if (!Number.isFinite(dollars)) return 0;
+  return Math.max(0, Math.round(dollars * 100));
+}
+
 async function getIdToken() {
   const startedAt = Date.now();
 
@@ -320,11 +334,12 @@ export default function DashboardClient({ shop }: Props) {
                     onChange={(value) => updateConfig("free_shipping_enabled", value)}
                   />
                   <TextField
-                    label="Threshold in cents"
+                    label="Free shipping threshold"
+                    prefix="$"
                     type="number"
-                    value={String(config.free_shipping_threshold_cents)}
+                    value={centsToDollarInput(config.free_shipping_threshold_cents)}
                     onChange={(value) =>
-                      updateConfig("free_shipping_threshold_cents", Number(value) || 0)
+                      updateConfig("free_shipping_threshold_cents", dollarsToCents(value))
                     }
                     autoComplete="off"
                   />
@@ -527,7 +542,36 @@ export default function DashboardClient({ shop }: Props) {
                     </Text>
                     {config.free_shipping_enabled ? (
                       <Box background="bg-fill-success-secondary" borderRadius="200" padding="300">
-                        <Text as="p">{config.free_shipping_message}</Text>
+                        <BlockStack gap="200">
+                          <InlineStack gap="200" blockAlign="center">
+                            <Badge tone="success">✓</Badge>
+                            <Text as="p" variant="bodyMd">
+                              {config.free_shipping_success_message}
+                            </Text>
+                          </InlineStack>
+                          <Text as="p" tone="subdued">
+                            {`Spend $${centsToDollarInput(
+                              config.free_shipping_threshold_cents
+                            )} to unlock free shipping`}
+                          </Text>
+                          <div
+                            aria-hidden="true"
+                            style={{
+                              background: "rgba(22, 163, 74, 0.18)",
+                              borderRadius: 999,
+                              height: 8,
+                              overflow: "hidden",
+                            }}
+                          >
+                            <div
+                              style={{
+                                background: "#16a34a",
+                                height: "100%",
+                                width: "100%",
+                              }}
+                            />
+                          </div>
+                        </BlockStack>
                       </Box>
                     ) : null}
                     {config.upsells_enabled && previewItems.length ? (

@@ -202,9 +202,13 @@
 }
 
 .lavoc-cart-progress {
+  background: color-mix(in srgb, var(--lavoc-cart-accent) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--lavoc-cart-accent) 22%, transparent);
+  border-radius: var(--lavoc-cart-radius);
   display: grid;
-  gap: 8px;
+  gap: 10px;
   margin-bottom: 16px;
+  padding: 12px;
 }
 
 .lavoc-cart-progress-track {
@@ -218,6 +222,45 @@
   background: var(--lavoc-cart-accent);
   height: 100%;
   transition: width 180ms ease;
+}
+
+.lavoc-cart-progress-copy {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  line-height: 1.35;
+}
+
+.lavoc-cart-progress-icon {
+  align-items: center;
+  background: #16a34a;
+  border-radius: 999px;
+  color: #ffffff;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 700;
+  height: 20px;
+  justify-content: center;
+  width: 20px;
+}
+
+.lavoc-cart-progress.is-complete {
+  background: rgba(22, 163, 74, 0.12);
+  border-color: rgba(22, 163, 74, 0.28);
+}
+
+.lavoc-cart-progress.is-complete .lavoc-cart-progress-copy {
+  color: #166534;
+  font-weight: 650;
+}
+
+.lavoc-cart-progress.is-complete .lavoc-cart-progress-track {
+  background: rgba(22, 163, 74, 0.2);
+}
+
+.lavoc-cart-progress.is-complete .lavoc-cart-progress-fill {
+  background: #16a34a;
 }
 
 .lavoc-cart-upsells {
@@ -276,7 +319,13 @@
 }
 
 .lavoc-cart-loading {
-  opacity: 0.62;
+  cursor: progress;
+}
+
+.lavoc-cart-loading .lavoc-cart-qty button,
+.lavoc-cart-loading .lavoc-cart-remove,
+.lavoc-cart-loading [data-lavoc-add] {
+  opacity: 0.55;
   pointer-events: none;
 }
 
