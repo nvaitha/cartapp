@@ -22,7 +22,7 @@ export function getShopify() {
         .map((scope) => scope.trim())
         .filter(Boolean),
       hostName,
-      apiVersion: ApiVersion.January26,
+      apiVersion: ApiVersion.April26,
       isEmbeddedApp: true,
     });
   }

@@ -1,5 +1,5 @@
 name = "LavocDerma Cart Drawer"
-client_id = "<new_cart_app_client_id>"
+client_id = "086b2759419dacc141d03852e017baad"
 application_url = "https://cartapp-ten.vercel.app"
 embedded = true
 
@@ -12,7 +12,7 @@ redirect_urls = [
 ]
 
 [webhooks]
-api_version = "2026-01"
+api_version = "2026-04"
 
 [[webhooks.subscriptions]]
 topics = [ "app/uninstalled" ]
