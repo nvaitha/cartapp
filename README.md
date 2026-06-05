@@ -19,6 +19,7 @@ shopify app dev
 Dev store: `bundleappstore-2.myshopify.com`.
 
 GitHub remote: `https://github.com/nvaitha/cartapp.git`.
+Production URL: `https://cartapp-ten.vercel.app`.
 
 ## Deploy
 

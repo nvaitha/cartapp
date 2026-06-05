@@ -1,6 +1,6 @@
 name = "LavocDerma Cart Drawer"
 client_id = "<new_cart_app_client_id>"
-application_url = "http://localhost:3000"
+application_url = "https://cartapp-ten.vercel.app"
 embedded = true
 
 [access_scopes]
@@ -8,7 +8,7 @@ scopes = "read_products"
 
 [auth]
 redirect_urls = [
-  "http://localhost:3000/api/auth/callback"
+  "https://cartapp-ten.vercel.app/api/auth/callback"
 ]
 
 [webhooks]
@@ -22,5 +22,5 @@ uri = "/api/webhooks/app-uninstalled"
 embedded = false
 
 [build]
-automatically_update_urls_on_dev = true
+automatically_update_urls_on_dev = false
 dev_store_url = "bundleappstore-2.myshopify.com"
