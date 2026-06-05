@@ -4,6 +4,12 @@ import { getSupabaseAdmin } from "@/lib/supabase";
 import { adminGraphqlClient } from "@/lib/shopify";
 import { DEFAULT_CART_DRAWER_CONFIG, type CartDrawerConfigInput } from "@/lib/schemas";
 
+const PUBLIC_CONFIG_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
+
 type ConfigRow = CartDrawerConfigInput & {
   colors: Record<string, unknown> | null;
   typography: Record<string, unknown> | null;
@@ -93,7 +99,12 @@ async function resolveUpsell(shop: string, upsell: UpsellRow) {
 
 export async function GET(request: NextRequest) {
   const shop = request.nextUrl.searchParams.get("shop")?.trim();
-  if (!shop) return NextResponse.json({ error: "Missing shop" }, { status: 400 });
+  if (!shop) {
+    return NextResponse.json(
+      { error: "Missing shop" },
+      { status: 400, headers: PUBLIC_CONFIG_HEADERS }
+    );
+  }
 
   const supabase = getSupabaseAdmin();
   const { data: session } = await supabase
@@ -103,7 +114,10 @@ export async function GET(request: NextRequest) {
     .single();
 
   if (!session) {
-    return NextResponse.json({ error: "Shop not found" }, { status: 404 });
+    return NextResponse.json(
+      { error: "Shop not found" },
+      { status: 404, headers: PUBLIC_CONFIG_HEADERS }
+    );
   }
 
   const [{ data: configData }, { data: upsellsData }] = await Promise.all([
@@ -156,8 +170,16 @@ export async function GET(request: NextRequest) {
     },
     {
       headers: {
+        ...PUBLIC_CONFIG_HEADERS,
         "Cache-Control": "public, max-age=60, stale-while-revalidate=300",
       },
     }
   );
+}
+
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: PUBLIC_CONFIG_HEADERS,
+  });
 }
