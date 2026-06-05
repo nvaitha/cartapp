@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
   }
 
   const supabase = getSupabaseAdmin();
-  await supabase.from("cart_drawer_sessions").upsert(
+  const { error: sessionError } = await supabase.from("cart_drawer_sessions").upsert(
     {
       shop: session.shop,
       access_token: session.accessToken,
@@ -31,7 +31,12 @@ export async function GET(request: NextRequest) {
     { onConflict: "shop" }
   );
 
-  await supabase.from("cart_drawer_configs").upsert(
+  if (sessionError) {
+    console.error("Session save error:", sessionError);
+    return NextResponse.json({ error: "Failed to save app session" }, { status: 500 });
+  }
+
+  const { error: configError } = await supabase.from("cart_drawer_configs").upsert(
     {
       shop: session.shop,
       ...DEFAULT_CART_DRAWER_CONFIG,
@@ -39,6 +44,11 @@ export async function GET(request: NextRequest) {
     },
     { onConflict: "shop", ignoreDuplicates: true }
   );
+
+  if (configError) {
+    console.error("Default config save error:", configError);
+    return NextResponse.json({ error: "Failed to save default config" }, { status: 500 });
+  }
 
   const host = url.searchParams.get("host") ?? "";
   let redirectUrl: string;

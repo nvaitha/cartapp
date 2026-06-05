@@ -11,8 +11,12 @@ export default async function Home({ searchParams }: HomeProps) {
   if (params.shop) query.set("shop", params.shop);
   if (params.host) query.set("host", params.host);
 
-  if (params.shop) {
+  if (params.shop && params.host) {
     redirect(`/dashboard?${query.toString()}`);
+  }
+
+  if (params.shop) {
+    redirect(`/api/auth?shop=${encodeURIComponent(params.shop)}`);
   }
 
   return (
