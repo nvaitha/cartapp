@@ -93,7 +93,7 @@ async function adminFetch(path: string, init?: RequestInit) {
 export default function DashboardClient({ shop }: Props) {
   const [config, setConfig] = useState<CartDrawerConfigInput>(() => cloneConfig());
   const [upsells, setUpsells] = useState<CartDrawerUpsellInput[]>([]);
-  const [status, setStatus] = useState("Defaults ready");
+  const [status, setStatus] = useState("Waiting for Shopify Admin session");
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);

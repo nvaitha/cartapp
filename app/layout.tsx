@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import Script from "next/script";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -35,10 +34,9 @@ export default function RootLayout({
     >
       <head>
         {shopifyApiKey ? <meta name="shopify-api-key" content={shopifyApiKey} /> : null}
-        <Script
-          src="https://cdn.shopify.com/shopifycloud/app-bridge.js"
-          strategy="beforeInteractive"
-        />
+        {/* Shopify App Bridge docs require this CDN script in the document head. */}
+        {/* eslint-disable-next-line @next/next/no-sync-scripts */}
+        <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
       </head>
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
