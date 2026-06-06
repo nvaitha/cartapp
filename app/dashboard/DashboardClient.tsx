@@ -186,16 +186,222 @@ async function adminFetch(path: string, init?: RequestInit) {
   });
 }
 
+type ProductPickerDropdownProps = {
+  label: string;
+  helpText: string;
+  triggerLabel: string;
+  actionLabel: string;
+  emptyText?: string;
+  selectedCount?: number;
+  closeOnSelect?: boolean;
+  onSelect: (variant: ProductVariantOption) => void;
+};
+
+function ProductPickerDropdown({
+  label,
+  helpText,
+  triggerLabel,
+  actionLabel,
+  emptyText = "No products found.",
+  selectedCount,
+  closeOnSelect = false,
+  onSelect,
+}: ProductPickerDropdownProps) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const [error, setError] = useState("");
+  const [products, setProducts] = useState<ProductSearchProduct[]>([]);
+
+  const searchProducts = useCallback(
+    async (queryOverride?: string) => {
+      const searchQuery = (queryOverride ?? query).trim();
+      setSearching(true);
+      setHasLoaded(true);
+      setError("");
+
+      try {
+        const response = await adminFetch(
+          `/api/admin/products/search?q=${encodeURIComponent(searchQuery)}&limit=20&status=all`
+        );
+        if (!response.ok) throw new Error(`Product search failed: HTTP ${response.status}`);
+        const payload = (await response.json()) as ProductSearchPayload;
+        setProducts(payload.products ?? []);
+      } catch (searchError) {
+        setProducts([]);
+        setError(
+          searchError instanceof Error ? searchError.message : "Product search failed."
+        );
+      } finally {
+        setSearching(false);
+      }
+    },
+    [query]
+  );
+
+  const toggleOpen = useCallback(() => {
+    const nextOpen = !open;
+    setOpen(nextOpen);
+    if (nextOpen && !hasLoaded && !searching) void searchProducts("");
+  }, [hasLoaded, open, searchProducts, searching]);
+
+  return (
+    <BlockStack gap="200">
+      <InlineStack align="space-between" blockAlign="center">
+        <BlockStack gap="100">
+          <Text as="h3" variant="headingSm">
+            {label}
+          </Text>
+          <Text as="p" variant="bodySm" tone="subdued">
+            {helpText}
+          </Text>
+        </BlockStack>
+        <InlineStack gap="200" blockAlign="center">
+          {selectedCount != null ? <Badge>{`${selectedCount} selected`}</Badge> : null}
+          <Button onClick={toggleOpen}>
+            {open ? "Hide" : triggerLabel}
+          </Button>
+        </InlineStack>
+      </InlineStack>
+
+      {open ? (
+        <div
+          style={{
+            border: "1px solid #dfe3e8",
+            borderRadius: 8,
+            padding: 12,
+          }}
+        >
+          <BlockStack gap="300">
+            <InlineStack gap="200" blockAlign="end">
+              <Box width="75%">
+                <TextField
+                  label="Search products"
+                  placeholder="Search products..."
+                  value={query}
+                  onChange={setQuery}
+                  onFocus={() => {
+                    if (!hasLoaded && !searching) void searchProducts("");
+                  }}
+                  autoComplete="off"
+                />
+              </Box>
+              <Button onClick={() => searchProducts()} loading={searching}>
+                Search
+              </Button>
+            </InlineStack>
+
+            {error ? (
+              <Text as="p" tone="critical" variant="bodySm">
+                {error}
+              </Text>
+            ) : null}
+
+            {hasLoaded && products.length === 0 && !searching && !error ? (
+              <Text as="p" tone="subdued">
+                {emptyText}
+              </Text>
+            ) : null}
+
+            {products.length > 0 ? (
+              <BlockStack gap="200">
+                {products.map((product) => (
+                  <div
+                    key={product.id}
+                    style={{
+                      border: "1px solid #e5e7eb",
+                      borderRadius: 8,
+                      padding: 12,
+                    }}
+                  >
+                    <BlockStack gap="300">
+                      <InlineStack gap="300" blockAlign="center">
+                        {product.images[0] ? (
+                          <Thumbnail
+                            alt={product.title}
+                            source={product.images[0].src}
+                            size="small"
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              width: 40,
+                              height: 40,
+                              borderRadius: 4,
+                              background: "#f1f1f1",
+                            }}
+                          />
+                        )}
+                        <BlockStack gap="100">
+                          <InlineStack gap="200" blockAlign="center">
+                            <Text as="p" variant="bodyMd" fontWeight="semibold">
+                              {product.title}
+                            </Text>
+                            {product.status ? (
+                              <Badge tone={product.status === "active" ? "success" : "attention"}>
+                                {product.status}
+                              </Badge>
+                            ) : null}
+                          </InlineStack>
+                          <Text as="p" variant="bodySm" tone="subdued">
+                            Choose the exact variant.
+                          </Text>
+                        </BlockStack>
+                      </InlineStack>
+
+                      {product.variants.length ? (
+                        product.variants.map((productVariant) => {
+                          const variant = variantOptionFromProduct(product, productVariant);
+
+                          return (
+                            <InlineStack
+                              key={productVariant.id}
+                              align="space-between"
+                              blockAlign="center"
+                              gap="300"
+                            >
+                              <Text as="span" variant="bodySm">
+                                {productVariant.title === "Default Title"
+                                  ? "Default variant"
+                                  : productVariant.title}{" "}
+                                - {formatProductSearchVariantPrice(productVariant)}
+                              </Text>
+                              <Button
+                                size="slim"
+                                onClick={() => {
+                                  onSelect(variant);
+                                  if (closeOnSelect) setOpen(false);
+                                }}
+                              >
+                                {actionLabel}
+                              </Button>
+                            </InlineStack>
+                          );
+                        })
+                      ) : (
+                        <Text as="p" tone="subdued" variant="bodySm">
+                          No variants found for this product.
+                        </Text>
+                      )}
+                    </BlockStack>
+                  </div>
+                ))}
+              </BlockStack>
+            ) : null}
+          </BlockStack>
+        </div>
+      ) : null}
+    </BlockStack>
+  );
+}
+
 export default function DashboardClient({ shop }: Props) {
   const [config, setConfig] = useState<CartDrawerConfigInput>(() => cloneConfig());
   const [upsells, setUpsells] = useState<CartDrawerUpsellInput[]>([]);
   const [status, setStatus] = useState("Waiting for Shopify Admin session");
   const [saving, setSaving] = useState(false);
-  const [query, setQuery] = useState("");
-  const [searching, setSearching] = useState(false);
-  const [hasSearched, setHasSearched] = useState(false);
-  const [productResults, setProductResults] = useState<ProductSearchProduct[]>([]);
-  const [searchResults, setSearchResults] = useState<ProductVariantOption[]>([]);
+  const [openRewardIds, setOpenRewardIds] = useState<string[]>(["reward-free-gift"]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -244,35 +450,13 @@ export default function DashboardClient({ shop }: Props) {
     }));
   }, []);
 
-  const searchProducts = useCallback(async (queryOverride?: string) => {
-    const searchQuery = (queryOverride ?? query).trim();
-    setSearching(true);
-    setHasSearched(true);
-    setStatus(searchQuery ? "Searching products" : "Loading recent products");
-
-    try {
-      const response = await adminFetch(
-        `/api/admin/products/search?q=${encodeURIComponent(searchQuery)}&limit=20&status=all`
-      );
-      if (!response.ok) throw new Error(`Search failed: ${response.status}`);
-      const payload = (await response.json()) as ProductSearchPayload;
-      const products = payload.products ?? [];
-      const variants = payload.variants ?? [];
-      setProductResults(products);
-      setSearchResults(variants);
-      setStatus(
-        searchQuery
-          ? `${products.length} products found`
-          : `${products.length} recent products loaded`
-      );
-    } catch (error) {
-      setProductResults([]);
-      setSearchResults([]);
-      setStatus(error instanceof Error ? error.message : "Search failed");
-    } finally {
-      setSearching(false);
-    }
-  }, [query]);
+  const toggleRewardOpen = useCallback((rewardId: string) => {
+    setOpenRewardIds((current) =>
+      current.includes(rewardId)
+        ? current.filter((id) => id !== rewardId)
+        : [...current, rewardId]
+    );
+  }, []);
 
   const addUpsell = useCallback((variant: ProductVariantOption) => {
     setUpsells((current) => [
@@ -461,6 +645,38 @@ export default function DashboardClient({ shop }: Props) {
     },
     []
   );
+
+  const clearRewardGift = useCallback((index: number) => {
+    setConfig((current) => {
+      const currentGamification = {
+        ...(DEFAULT_CART_DRAWER_CONFIG.layout.gamification as GamificationConfig),
+        ...current.layout.gamification,
+      };
+      const rewards =
+        currentGamification.rewards?.length
+          ? [...currentGamification.rewards]
+          : [...DEFAULT_CART_DRAWER_CONFIG.layout.gamification.rewards];
+
+      rewards[index] = {
+        ...rewards[index],
+        product_gid: undefined,
+        variant_gid: undefined,
+        variant_id: undefined,
+        product_title: undefined,
+        image_url: undefined,
+        price_cents: null,
+        compare_at_cents: null,
+      };
+
+      return {
+        ...current,
+        layout: {
+          ...current.layout,
+          gamification: { ...currentGamification, rewards },
+        },
+      };
+    });
+  }, []);
 
   const updateFrequentlyBoughtTogether = useCallback(
     (next: Partial<FrequentlyBoughtTogetherConfig>) => {
@@ -742,169 +958,239 @@ export default function DashboardClient({ shop }: Props) {
                     />
                   </BlockStack>
                   <Divider />
-                  {gamification.rewards.map((reward, index) => (
-                    <div
-                      key={reward.id}
-                      style={{
-                        border: "1px solid #dfe3e8",
-                        borderRadius: 8,
-                        padding: 16,
-                      }}
-                    >
-                      <BlockStack gap="300">
-                        <InlineStack align="space-between" blockAlign="center">
-                          <Text as="h3" variant="headingSm">
-                            {`Reward ${index + 1} - ${reward.title}`}
-                          </Text>
-                          <Checkbox
-                            label="Enabled"
-                            checked={reward.enabled}
-                            onChange={(value) => updateReward(index, "enabled", value)}
-                          />
-                        </InlineStack>
-                        <InlineStack gap="300">
-                          <Box width="30%">
-                            <Select
-                              label="Reward type"
-                              value={reward.type}
-                              options={[
-                                { label: "Free gift", value: "free_gift" },
-                                { label: "Free shipping", value: "free_shipping" },
-                                { label: "Discount", value: "discount" },
-                                { label: "Custom reward", value: "custom" },
-                              ]}
-                              onChange={(value) =>
-                                updateReward(index, "type", value as GamifiedRewardConfig["type"])
-                              }
-                            />
-                          </Box>
-                          <Box width="30%">
-                            <TextField
-                              label="Spend goal"
-                              prefix="$"
-                              type="number"
-                              value={centsToDollarInput(reward.threshold_cents)}
-                              onChange={(value) =>
-                                updateReward(index, "threshold_cents", dollarsToCents(value))
-                              }
-                              autoComplete="off"
-                            />
-                          </Box>
-                          <Box width="30%">
-                            <TextField
-                              label="Reward title"
-                              value={reward.title}
-                              onChange={(value) => updateReward(index, "title", value)}
-                              autoComplete="off"
-                            />
-                          </Box>
-                        </InlineStack>
-                        <InlineStack gap="300">
-                          <Box width="20%">
-                            <TextField
-                              label="Icon"
-                              value={reward.icon ?? ""}
-                              onChange={(value) => updateReward(index, "icon", value)}
-                              autoComplete="off"
-                            />
-                          </Box>
-                          <Box width="38%">
-                            <TextField
-                              label="Before goal text"
-                              value={reward.before_text}
-                              onChange={(value) => updateReward(index, "before_text", value)}
-                              autoComplete="off"
-                            />
-                          </Box>
-                          <Box width="38%">
-                            <TextField
-                              label="After goal text"
-                              value={reward.after_text}
-                              onChange={(value) => updateReward(index, "after_text", value)}
-                              autoComplete="off"
-                            />
-                          </Box>
-                        </InlineStack>
-                        {reward.type === "free_gift" ? (
-                          <BlockStack gap="300">
-                            <InlineStack align="space-between" blockAlign="center">
-                              <BlockStack gap="100">
-                                <Text as="p" variant="bodyMd">
-                                  Free gift product
-                                </Text>
-                                <Text as="p" variant="bodySm" tone="subdued">
-                                  Search products below, then choose {`Use as gift R${index + 1}`}.
-                                </Text>
-                              </BlockStack>
-                              <InlineStack gap="200" blockAlign="center">
+                  {gamification.rewards.map((reward, index) => {
+                    const rewardOpen = openRewardIds.includes(reward.id);
+                    const rewardTypeLabel =
+                      reward.type === "free_gift"
+                        ? "Free gift"
+                        : reward.type === "free_shipping"
+                          ? "Free shipping"
+                          : reward.type === "discount"
+                            ? "Discount"
+                            : "Custom reward";
+
+                    return (
+                      <div
+                        key={reward.id}
+                        style={{
+                          border: "1px solid #dfe3e8",
+                          borderRadius: 8,
+                          overflow: "hidden",
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => toggleRewardOpen(reward.id)}
+                          style={{
+                            width: "100%",
+                            border: 0,
+                            background: "#fff",
+                            cursor: "pointer",
+                            padding: 16,
+                            textAlign: "left",
+                          }}
+                        >
+                          <InlineStack align="space-between" blockAlign="center">
+                            <InlineStack gap="300" blockAlign="center">
+                              <Text as="span" variant="headingSm">
+                                {`Reward ${index + 1} - ${reward.title}`}
+                              </Text>
+                              <Badge>{rewardTypeLabel}</Badge>
+                              <Badge>{`$${centsToDollarInput(reward.threshold_cents)}`}</Badge>
+                              {reward.type === "free_gift" ? (
                                 <Badge tone={reward.variant_id ? "success" : "attention"}>
                                   {reward.variant_id ? "Gift selected" : "Needs gift"}
                                 </Badge>
-                                <Button onClick={() => searchProducts("")} loading={searching}>
-                                  Load products
-                                </Button>
-                              </InlineStack>
+                              ) : null}
+                              <Badge tone={reward.enabled ? "success" : "attention"}>
+                                {reward.enabled ? "Enabled" : "Disabled"}
+                              </Badge>
                             </InlineStack>
-                            {reward.product_title ? (
-                              <InlineStack gap="300" blockAlign="center">
-                                <Thumbnail
-                                  alt={reward.product_title}
-                                  source={reward.image_url || ""}
-                                  size="small"
+                            <Text as="span" tone="subdued">
+                              {rewardOpen ? "Hide" : "Edit"}
+                            </Text>
+                          </InlineStack>
+                        </button>
+
+                        {rewardOpen ? (
+                          <div style={{ borderTop: "1px solid #dfe3e8", padding: 16 }}>
+                            <BlockStack gap="300">
+                              <InlineStack align="space-between" blockAlign="center">
+                                <Checkbox
+                                  label="Enabled"
+                                  checked={reward.enabled}
+                                  onChange={(value) => updateReward(index, "enabled", value)}
                                 />
-                                <BlockStack gap="100">
-                                  <Text as="p" variant="bodyMd">
-                                    {reward.product_title}
-                                  </Text>
-                                  <Text as="p" variant="bodySm" tone="subdued">
-                                    Variant {reward.variant_id}
-                                  </Text>
+                              </InlineStack>
+                              <InlineStack gap="300">
+                                <Box width="30%">
+                                  <Select
+                                    label="Reward type"
+                                    value={reward.type}
+                                    options={[
+                                      { label: "Free gift", value: "free_gift" },
+                                      { label: "Free shipping", value: "free_shipping" },
+                                      { label: "Discount", value: "discount" },
+                                      { label: "Custom reward", value: "custom" },
+                                    ]}
+                                    onChange={(value) =>
+                                      updateReward(
+                                        index,
+                                        "type",
+                                        value as GamifiedRewardConfig["type"]
+                                      )
+                                    }
+                                  />
+                                </Box>
+                                <Box width="30%">
+                                  <TextField
+                                    label="Spend goal"
+                                    prefix="$"
+                                    type="number"
+                                    value={centsToDollarInput(reward.threshold_cents)}
+                                    onChange={(value) =>
+                                      updateReward(
+                                        index,
+                                        "threshold_cents",
+                                        dollarsToCents(value)
+                                      )
+                                    }
+                                    autoComplete="off"
+                                  />
+                                </Box>
+                                <Box width="30%">
+                                  <TextField
+                                    label="Reward title"
+                                    value={reward.title}
+                                    onChange={(value) => updateReward(index, "title", value)}
+                                    autoComplete="off"
+                                  />
+                                </Box>
+                              </InlineStack>
+                              <InlineStack gap="300">
+                                <Box width="20%">
+                                  <TextField
+                                    label="Icon"
+                                    value={reward.icon ?? ""}
+                                    onChange={(value) => updateReward(index, "icon", value)}
+                                    autoComplete="off"
+                                  />
+                                </Box>
+                                <Box width="38%">
+                                  <TextField
+                                    label="Before goal text"
+                                    value={reward.before_text}
+                                    onChange={(value) =>
+                                      updateReward(index, "before_text", value)
+                                    }
+                                    autoComplete="off"
+                                  />
+                                </Box>
+                                <Box width="38%">
+                                  <TextField
+                                    label="After goal text"
+                                    value={reward.after_text}
+                                    onChange={(value) => updateReward(index, "after_text", value)}
+                                    autoComplete="off"
+                                  />
+                                </Box>
+                              </InlineStack>
+                              {reward.type === "free_gift" ? (
+                                <BlockStack gap="300">
+                                  {reward.product_title ? (
+                                    <InlineStack align="space-between" blockAlign="center">
+                                      <InlineStack gap="300" blockAlign="center">
+                                        <Thumbnail
+                                          alt={reward.product_title}
+                                          source={reward.image_url || ""}
+                                          size="small"
+                                        />
+                                        <BlockStack gap="100">
+                                          <Text as="p" variant="bodyMd">
+                                            {reward.product_title}
+                                          </Text>
+                                          <Text as="p" variant="bodySm" tone="subdued">
+                                            Variant {reward.variant_id}
+                                          </Text>
+                                        </BlockStack>
+                                      </InlineStack>
+                                      <Button
+                                        tone="critical"
+                                        onClick={() => {
+                                          clearRewardGift(index);
+                                          setStatus(`Gift R${index + 1} removed`);
+                                        }}
+                                      >
+                                        Remove gift
+                                      </Button>
+                                    </InlineStack>
+                                  ) : null}
+
+                                  <ProductPickerDropdown
+                                    label="Select free gifts"
+                                    helpText="Search and select the exact product variant to reward when this goal is unlocked."
+                                    triggerLabel={
+                                      reward.variant_id ? "Change gift" : "Select free products"
+                                    }
+                                    actionLabel="Select gift"
+                                    closeOnSelect
+                                    emptyText="No gift products found."
+                                    onSelect={(variant) => {
+                                      selectVariantAsRewardGift(index, variant);
+                                      setStatus(`Gift R${index + 1} selected`);
+                                    }}
+                                  />
+
+                                  <InlineStack gap="300">
+                                    <Box width="48%">
+                                      <TextField
+                                        label="Teaser heading"
+                                        value={reward.teaser_heading ?? ""}
+                                        onChange={(value) =>
+                                          updateReward(index, "teaser_heading", value)
+                                        }
+                                        autoComplete="off"
+                                      />
+                                    </Box>
+                                    <Box width="48%">
+                                      <TextField
+                                        label="Teaser subheading"
+                                        value={reward.teaser_subheading ?? ""}
+                                        onChange={(value) =>
+                                          updateReward(index, "teaser_subheading", value)
+                                        }
+                                        autoComplete="off"
+                                      />
+                                    </Box>
+                                  </InlineStack>
                                 </BlockStack>
-                              </InlineStack>
-                            ) : null}
-                            <InlineStack gap="300">
-                              <Box width="48%">
+                              ) : null}
+                              {reward.type === "discount" ? (
                                 <TextField
-                                  label="Teaser heading"
-                                  value={reward.teaser_heading ?? ""}
+                                  label="Discount code or label"
+                                  value={reward.discount_code ?? ""}
                                   onChange={(value) =>
-                                    updateReward(index, "teaser_heading", value)
+                                    updateReward(index, "discount_code", value)
                                   }
                                   autoComplete="off"
                                 />
-                              </Box>
-                              <Box width="48%">
+                              ) : null}
+                              {reward.type === "custom" ? (
                                 <TextField
-                                  label="Teaser subheading"
-                                  value={reward.teaser_subheading ?? ""}
+                                  label="Custom reward label"
+                                  value={reward.custom_label ?? ""}
                                   onChange={(value) =>
-                                    updateReward(index, "teaser_subheading", value)
+                                    updateReward(index, "custom_label", value)
                                   }
                                   autoComplete="off"
                                 />
-                              </Box>
-                            </InlineStack>
-                          </BlockStack>
+                              ) : null}
+                            </BlockStack>
+                          </div>
                         ) : null}
-                        {reward.type === "discount" ? (
-                          <TextField
-                            label="Discount code or label"
-                            value={reward.discount_code ?? ""}
-                            onChange={(value) => updateReward(index, "discount_code", value)}
-                            autoComplete="off"
-                          />
-                        ) : null}
-                        {reward.type === "custom" ? (
-                          <TextField
-                            label="Custom reward label"
-                            value={reward.custom_label ?? ""}
-                            onChange={(value) => updateReward(index, "custom_label", value)}
-                            autoComplete="off"
-                          />
-                        ) : null}
-                      </BlockStack>
-                    </div>
-                  ))}
+                      </div>
+                    );
+                  })}
                 </BlockStack>
               </Card>
 
@@ -980,136 +1266,17 @@ export default function DashboardClient({ shop }: Props) {
                     onChange={(value) => updateConfig("upsell_heading", value)}
                     autoComplete="off"
                   />
-                  <InlineStack gap="300" blockAlign="end">
-                    <Box width="70%">
-                      <TextField
-                        label="Search or load products"
-                        value={query}
-                        onChange={setQuery}
-                        onFocus={() => {
-                          if (!hasSearched && !searching) void searchProducts("");
-                        }}
-                        helpText="Leave blank and click Load products to preview recent products. Use results for upsells, frequently bought together, or a free gift reward."
-                        autoComplete="off"
-                      />
-                    </Box>
-                    <Button onClick={() => searchProducts()} loading={searching}>
-                      {query.trim() ? "Search" : "Load products"}
-                    </Button>
-                  </InlineStack>
-                  <BlockStack gap="300">
-                    <InlineStack align="space-between" blockAlign="center">
-                      <Text as="h3" variant="headingSm">
-                        Product results
-                      </Text>
-                      {productResults.length > 0 ? (
-                        <Badge>{`${productResults.length} products · ${searchResults.length} variants`}</Badge>
-                      ) : null}
-                    </InlineStack>
-                    {productResults.length === 0 ? (
-                      <Text as="p" tone="subdued">
-                        {hasSearched
-                          ? "No products found. Try a broader search term or leave search blank to load recent products."
-                          : "Load products to preview selectable variants."}
-                      </Text>
-                    ) : (
-                      productResults.map((product) => (
-                        <div
-                          key={product.id}
-                          style={{
-                            border: "1px solid #dfe3e8",
-                            borderRadius: 8,
-                            padding: 12,
-                          }}
-                        >
-                          <BlockStack gap="300">
-                            <InlineStack gap="300" blockAlign="center">
-                              {product.images[0] ? (
-                                <Thumbnail
-                                  alt={product.title}
-                                  source={product.images[0].src}
-                                  size="small"
-                                />
-                              ) : (
-                                <div
-                                  style={{
-                                    width: 40,
-                                    height: 40,
-                                    borderRadius: 4,
-                                    background: "#f1f1f1",
-                                  }}
-                                />
-                              )}
-                              <BlockStack gap="100">
-                                <InlineStack gap="200" blockAlign="center">
-                                  <Text as="p" variant="bodyMd" fontWeight="semibold">
-                                    {product.title}
-                                  </Text>
-                                  {product.status ? (
-                                    <Badge
-                                      tone={product.status === "active" ? "success" : "attention"}
-                                    >
-                                      {product.status}
-                                    </Badge>
-                                  ) : null}
-                                </InlineStack>
-                                <Text as="p" variant="bodySm" tone="subdued">
-                                  Choose the exact variant to use.
-                                </Text>
-                              </BlockStack>
-                            </InlineStack>
-                            {product.variants.length ? (
-                              product.variants.map((productVariant) => {
-                                const variant = variantOptionFromProduct(product, productVariant);
-
-                                return (
-                                  <InlineStack
-                                    key={productVariant.id}
-                                    align="space-between"
-                                    blockAlign="center"
-                                    gap="300"
-                                  >
-                                    <Text as="span" variant="bodySm">
-                                      {productVariant.title === "Default Title"
-                                        ? "Default variant"
-                                        : productVariant.title}{" "}
-                                      - {formatProductSearchVariantPrice(productVariant)}
-                                    </Text>
-                                    <InlineStack gap="200">
-                                      {gamification.rewards.map((reward, rewardIndex) =>
-                                        reward.type === "free_gift" ? (
-                                          <Button
-                                            key={`${reward.id}-${productVariant.id}`}
-                                            size="slim"
-                                            onClick={() => {
-                                              selectVariantAsRewardGift(rewardIndex, variant);
-                                              setStatus(`Gift R${rewardIndex + 1} selected`);
-                                            }}
-                                          >
-                                            {`Use as gift R${rewardIndex + 1}`}
-                                          </Button>
-                                        ) : null
-                                      )}
-                                      <Button size="slim" onClick={() => addFbtProduct(variant)}>
-                                        Add FBT
-                                      </Button>
-                                      <Button size="slim" onClick={() => addUpsell(variant)}>
-                                        Add upsell
-                                      </Button>
-                                    </InlineStack>
-                                  </InlineStack>
-                                );
-                              })
-                            ) : (
-                              <Text as="p" tone="subdued" variant="bodySm">
-                                No variants found for this product.
-                              </Text>
-                            )}
-                          </BlockStack>
-                        </div>
-                      ))
-                    )}
-                  </BlockStack>
+                  <ProductPickerDropdown
+                    label="Add upsell"
+                    helpText="Search products and choose the exact variant to show as a cart upsell."
+                    triggerLabel="Add upsell"
+                    actionLabel="Add upsell"
+                    selectedCount={upsells.length}
+                    onSelect={(variant) => {
+                      addUpsell(variant);
+                      setStatus(`${variant.productTitle} added as an upsell`);
+                    }}
+                  />
                   <Divider />
                   {upsells.length === 0 ? (
                     <Text as="p" tone="subdued">
@@ -1261,10 +1428,21 @@ export default function DashboardClient({ shop }: Props) {
                       autoComplete="off"
                     />
                   </BlockStack>
+                  <ProductPickerDropdown
+                    label="Add frequently bought together product"
+                    helpText="Search products and choose the exact variant to recommend in the cart drawer."
+                    triggerLabel="Add product"
+                    actionLabel="Add product"
+                    selectedCount={frequentlyBoughtTogether.products.length}
+                    onSelect={(variant) => {
+                      addFbtProduct(variant);
+                      setStatus(`${variant.productTitle} added to frequently bought together`);
+                    }}
+                  />
                   <Divider />
                   {frequentlyBoughtTogether.products.length === 0 ? (
                     <Text as="p" tone="subdued">
-                      Search products above, then choose Add FBT.
+                      No frequently bought together products selected.
                     </Text>
                   ) : (
                     frequentlyBoughtTogether.products.map((item, index) => (
