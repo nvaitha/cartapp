@@ -11,7 +11,9 @@
     ready: false,
     open: false,
     busy: false,
-    timerEndsAt: null
+    timerEndsAt: null,
+    giftAddingRewardId: null,
+    giftAddedRewardIds: {}
   };
   var nativeOpenTimer = null;
   var internalCartMutationDepth = 0;
@@ -282,9 +284,12 @@
     return (
       '<section class="lavoc-cart-rewards" aria-label="Cart rewards">' +
       '<div class="lavoc-cart-reward-message">' + escapeHtml(message) + "</div>" +
-      '<div class="lavoc-cart-reward-track"><div class="lavoc-cart-reward-fill" style="width:' +
+      '<div class="lavoc-cart-reward-track"><div class="lavoc-cart-reward-rail" style="--lavoc-cart-reward-progress:' +
       width +
-      '%"></div>' +
+      "%; --lavoc-cart-reward-count:" +
+      rewards.length +
+      '">' +
+      '<div class="lavoc-cart-reward-fill"></div>' +
       rewards
         .map(function (reward) {
           var unlocked = cart.total_price >= Number(reward.threshold_cents || 0);
@@ -292,9 +297,7 @@
           return (
             '<div class="lavoc-cart-reward-node' +
             (unlocked || included ? " is-unlocked" : "") +
-            '" style="left:' +
-            Math.min(100, Math.max(0, Math.round((Number(reward.threshold_cents || 0) / maxGoal) * 100))) +
-            '%">' +
+            '">' +
             '<div class="lavoc-cart-reward-dot"><span>' +
             escapeHtml(reward.icon || "✓") +
             "</span></div>" +
@@ -307,7 +310,7 @@
           );
         })
         .join("") +
-      "</div></section>"
+      "</div></div></section>"
     );
   }
 
@@ -321,7 +324,10 @@
     var threshold = Number(giftReward.threshold_cents || 0);
     var unlocked = cart.total_price >= threshold;
     var included = rewardIncludedBySubscription(giftReward, gamification, cart);
-    var added = giftReward.variant_id && cartHasVariant(giftReward.variant_id);
+    var added =
+      giftReward.variant_id &&
+      (cartHasVariant(giftReward.variant_id) || state.giftAddedRewardIds[giftReward.id]);
+    var adding = state.giftAddingRewardId === giftReward.id;
     var message = included
       ? (giftReward.subscription_text || gamification.subscription_message || "Your gift is included with subscription.")
       : unlocked
@@ -347,9 +353,15 @@
       escapeHtml(giftReward.teaser_subheading || "$0 Free") +
       "</strong></div>" +
       (unlocked && giftReward.variant_id && !included && !added
-        ? '<button type="button" data-lavoc-gift="' + escapeHtml(giftReward.id) + '">Add gift</button>'
+        ? '<button type="button" data-lavoc-gift="' +
+          escapeHtml(giftReward.id) +
+          '"' +
+          (adding ? " disabled" : "") +
+          ">" +
+          (adding ? "Adding gift..." : "Add gift") +
+          "</button>"
         : added
-          ? '<div class="lavoc-cart-gift-added">Gift added</div>'
+          ? '<button type="button" class="lavoc-cart-gift-added" disabled>Gift added</button>'
           : "") +
       "</div></div></section>"
     );
@@ -378,34 +390,6 @@
       "</div>" +
       "</div>" +
       "</article>"
-    );
-  }
-
-  function upsellsHtml() {
-    var cfg = state.config || {};
-    var upsells = cfg.upsells || [];
-    if (!upsells.length) return "";
-
-    return (
-      '<section class="lavoc-cart-upsells"><h3 class="lavoc-cart-title">' +
-      escapeHtml(cfg.upsellsHeading || "Complete your routine") +
-      "</h3>" +
-      upsells
-        .map(function (item) {
-          return (
-            '<article class="lavoc-cart-upsell">' +
-            (item.imageUrl ? '<img alt="' + escapeHtml(item.title) + '" src="' + escapeHtml(item.imageUrl) + '">' : "<div></div>") +
-            "<div>" +
-            '<div class="lavoc-cart-upsell-title">' + escapeHtml(item.title) + "</div>" +
-            (item.badgeText ? '<div class="lavoc-cart-badge">' + escapeHtml(item.badgeText) + "</div>" : "") +
-            (item.priceCents != null ? '<div class="lavoc-cart-line-meta">' + money(item.priceCents) + "</div>" : "") +
-            "</div>" +
-            '<button type="button" data-lavoc-add="' + escapeHtml(item.variantId) + '">Add</button>' +
-            "</article>"
-          );
-        })
-        .join("") +
-      "</section>"
     );
   }
 
@@ -463,8 +447,7 @@
         cart.items.map(lineHtml).join("") +
         "</div>" +
         (gamification ? giftTeaserHtml(gamification) : "") +
-        fbtHtml() +
-        upsellsHtml()
+        fbtHtml()
       : (gamification ? rewardsHtml(gamification) : "") +
         '<div class="lavoc-cart-empty"><h3>' +
         escapeHtml(copy.emptyTitle || "Your cart is empty") +
@@ -562,10 +545,21 @@
   function applyCart(cart, sequence) {
     if (sequence && sequence < cartSequence) return cart;
     state.cart = cart;
+    syncGiftAddedState();
     render();
     document.dispatchEvent(new CustomEvent("lavoc:cart:updated", { detail: { cart: cart } }));
     refreshSections(cart);
     return cart;
+  }
+
+  function syncGiftAddedState() {
+    var gamification = getGamification();
+    var rewards = activeRewards(gamification);
+    rewards.forEach(function (reward) {
+      if (reward.type !== "free_gift" || !reward.variant_id) return;
+      if (cartHasVariant(reward.variant_id)) state.giftAddedRewardIds[reward.id] = true;
+      else delete state.giftAddedRewardIds[reward.id];
+    });
   }
 
   function openDrawer() {
@@ -704,7 +698,7 @@
       });
   }
 
-  function addUpsell(variantId) {
+  function addRecommendation(variantId) {
     return addVariantToCart(variantId);
   }
 
@@ -714,10 +708,27 @@
       return item.id === rewardId;
     });
     if (!reward || !reward.variant_id) return Promise.resolve();
+    if (cartHasVariant(reward.variant_id) || state.giftAddedRewardIds[reward.id]) {
+      state.giftAddedRewardIds[reward.id] = true;
+      render();
+      return Promise.resolve();
+    }
+
+    state.giftAddingRewardId = reward.id;
+    render();
+
     return addVariantToCart(reward.variant_id, {
       _lavoc_reward: reward.title,
-      _lavoc_reward_type: reward.type
-    });
+      _lavoc_reward_type: reward.type,
+      _lavoc_free_gift: "true"
+    })
+      .then(function () {
+        state.giftAddedRewardIds[reward.id] = true;
+      })
+      .finally(function () {
+        state.giftAddingRewardId = null;
+        render();
+      });
   }
 
   mount.addEventListener("click", function (event) {
@@ -738,7 +749,7 @@
 
     var add = target.closest("[data-lavoc-add]");
     if (add) {
-      addUpsell(add.getAttribute("data-lavoc-add"));
+      addRecommendation(add.getAttribute("data-lavoc-add"));
       return;
     }
 

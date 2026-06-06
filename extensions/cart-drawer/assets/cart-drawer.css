@@ -167,8 +167,7 @@
   padding-bottom: 16px;
 }
 
-.lavoc-cart-line img,
-.lavoc-cart-upsell img {
+.lavoc-cart-line img {
   aspect-ratio: 1;
   background: #f2ede6;
   border-radius: var(--lavoc-cart-radius);
@@ -205,7 +204,6 @@
 
 .lavoc-cart-qty button,
 .lavoc-cart-remove,
-.lavoc-cart-upsell button,
 .lavoc-cart-secondary {
   background: transparent;
   border: 1px solid var(--lavoc-cart-border);
@@ -305,39 +303,57 @@
 }
 
 .lavoc-cart-reward-track {
-  height: 96px;
-  margin: 0 18px;
+  margin: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 2px 8px;
+  scrollbar-width: thin;
+}
+
+.lavoc-cart-reward-track::-webkit-scrollbar {
+  height: 5px;
+}
+
+.lavoc-cart-reward-track::-webkit-scrollbar-thumb {
+  background: rgba(143, 129, 130, 0.42);
+  border-radius: 999px;
+}
+
+.lavoc-cart-reward-rail {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(var(--lavoc-cart-reward-count, 4), minmax(76px, 1fr));
+  min-width: max(100%, calc(var(--lavoc-cart-reward-count, 4) * 86px));
+  padding-top: 6px;
   position: relative;
 }
 
-.lavoc-cart-reward-track::before,
+.lavoc-cart-reward-rail::before,
 .lavoc-cart-reward-fill {
   border-radius: 999px;
   content: "";
   height: 8px;
-  left: 0;
+  left: 10px;
   position: absolute;
-  right: 0;
-  top: 34px;
+  top: 38px;
 }
 
-.lavoc-cart-reward-track::before {
+.lavoc-cart-reward-rail::before {
   background: #8f8182;
+  right: 10px;
 }
 
 .lavoc-cart-reward-fill {
   background: #6f8f45;
-  right: auto;
+  width: var(--lavoc-cart-reward-progress, 0%);
   transition: width 180ms ease;
   z-index: 1;
 }
 
 .lavoc-cart-reward-node {
-  position: absolute;
+  min-width: 0;
+  position: relative;
   text-align: center;
-  top: 0;
-  transform: translateX(-50%);
-  width: 92px;
   z-index: 2;
 }
 
@@ -348,13 +364,13 @@
   border-radius: 999px;
   color: #517735;
   display: inline-flex;
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 800;
-  height: 68px;
+  height: 60px;
   justify-content: center;
   line-height: 1;
   margin-bottom: 4px;
-  width: 68px;
+  width: 60px;
 }
 
 .lavoc-cart-reward-node.is-unlocked .lavoc-cart-reward-dot {
@@ -364,15 +380,18 @@
 
 .lavoc-cart-reward-title {
   color: #517735;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 800;
-  line-height: 1.05;
+  line-height: 1.12;
+  overflow-wrap: anywhere;
 }
 
 .lavoc-cart-reward-goal {
   color: #5c7d3a;
+  font-size: 13px;
   font-weight: 800;
   line-height: 1.15;
+  white-space: nowrap;
 }
 
 .lavoc-cart-gift {
@@ -445,34 +464,10 @@
 }
 
 .lavoc-cart-gift-added {
-  color: #166534;
-  font-weight: 700;
-  margin-top: 6px;
-}
-
-.lavoc-cart-upsells {
-  border-top: 1px solid var(--lavoc-cart-border);
-  display: grid;
-  gap: 12px;
-  margin-top: 18px;
-  padding-top: 18px;
-}
-
-.lavoc-cart-upsell {
-  align-items: center;
-  display: grid;
-  gap: 12px;
-  grid-template-columns: 58px 1fr auto;
-}
-
-.lavoc-cart-upsell-title {
-  font-weight: 650;
-}
-
-.lavoc-cart-badge {
-  color: var(--lavoc-cart-accent);
-  font-size: 12px;
-  font-weight: 650;
+  background: #dcfce7 !important;
+  border-color: #16a34a !important;
+  color: #166534 !important;
+  cursor: default !important;
 }
 
 .lavoc-cart-fbt {
@@ -567,8 +562,14 @@
 
 .lavoc-cart-loading .lavoc-cart-qty button,
 .lavoc-cart-loading .lavoc-cart-remove,
-.lavoc-cart-loading [data-lavoc-add] {
+.lavoc-cart-loading [data-lavoc-add],
+.lavoc-cart-loading [data-lavoc-gift] {
   opacity: 0.55;
+  pointer-events: none;
+}
+
+.lavoc-cart-loading .lavoc-cart-checkout {
+  opacity: 0.65;
   pointer-events: none;
 }
 
@@ -577,21 +578,13 @@
     grid-template-columns: 64px 1fr;
   }
 
-  .lavoc-cart-upsell {
-    grid-template-columns: 52px 1fr;
-  }
-
   .lavoc-cart-reward-track {
-    margin: 0 10px;
-  }
-
-  .lavoc-cart-reward-node {
-    width: 74px;
+    margin: 0;
   }
 
   .lavoc-cart-reward-dot {
-    height: 58px;
-    width: 58px;
+    height: 54px;
+    width: 54px;
   }
 
   .lavoc-cart-reward-message {
@@ -607,8 +600,4 @@
     justify-self: start;
   }
 
-  .lavoc-cart-upsell button {
-    grid-column: 2;
-    justify-self: start;
-  }
 }

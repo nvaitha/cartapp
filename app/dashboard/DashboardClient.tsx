@@ -24,7 +24,6 @@ import enTranslations from "@shopify/polaris/locales/en.json";
 import type {
   AdminConfigPayload,
   CartDrawerConfigInput,
-  CartDrawerUpsellInput,
 } from "@/lib/schemas";
 import { DEFAULT_CART_DRAWER_CONFIG } from "@/lib/schemas";
 
@@ -398,7 +397,6 @@ function ProductPickerDropdown({
 
 export default function DashboardClient({ shop }: Props) {
   const [config, setConfig] = useState<CartDrawerConfigInput>(() => cloneConfig());
-  const [upsells, setUpsells] = useState<CartDrawerUpsellInput[]>([]);
   const [status, setStatus] = useState("Waiting for Shopify Admin session");
   const [saving, setSaving] = useState(false);
   const [openRewardIds, setOpenRewardIds] = useState<string[]>(["reward-free-gift"]);
@@ -414,7 +412,6 @@ export default function DashboardClient({ shop }: Props) {
       })
       .then((payload) => {
         setConfig({ ...cloneConfig(), ...(payload.config ?? {}) });
-        setUpsells(payload.upsells ?? []);
         setStatus("Saved settings loaded");
       })
       .catch((error) => {
@@ -458,39 +455,6 @@ export default function DashboardClient({ shop }: Props) {
     );
   }, []);
 
-  const addUpsell = useCallback((variant: ProductVariantOption) => {
-    setUpsells((current) => [
-      ...current,
-      {
-        sort_order: current.length,
-        product_gid: variant.productGid,
-        variant_gid: variant.variantGid,
-        title_override: variant.productTitle,
-        badge_text: "Add-on",
-        enabled: true,
-      },
-    ]);
-  }, []);
-
-  const moveUpsell = useCallback((index: number, direction: -1 | 1) => {
-    setUpsells((current) => {
-      const nextIndex = index + direction;
-      if (nextIndex < 0 || nextIndex >= current.length) return current;
-      const copy = [...current];
-      const [item] = copy.splice(index, 1);
-      copy.splice(nextIndex, 0, item);
-      return copy.map((upsell, sort_order) => ({ ...upsell, sort_order }));
-    });
-  }, []);
-
-  const removeUpsell = useCallback((index: number) => {
-    setUpsells((current) =>
-      current
-        .filter((_, itemIndex) => itemIndex !== index)
-        .map((upsell, sort_order) => ({ ...upsell, sort_order }))
-    );
-  }, []);
-
   const saveConfig = useCallback(async () => {
     setSaving(true);
     setStatus("Saving");
@@ -499,8 +463,11 @@ export default function DashboardClient({ shop }: Props) {
       const response = await adminFetch("/api/admin/config", {
         method: "POST",
         body: JSON.stringify({
-          config,
-          upsells: upsells.map((upsell, sort_order) => ({ ...upsell, sort_order })),
+          config: {
+            ...config,
+            upsells_enabled: false,
+          },
+          upsells: [],
         }),
       });
       if (!response.ok) {
@@ -513,19 +480,7 @@ export default function DashboardClient({ shop }: Props) {
     } finally {
       setSaving(false);
     }
-  }, [config, upsells]);
-
-  const previewItems = useMemo(
-    () =>
-      upsells
-        .filter((upsell) => upsell.enabled)
-        .map((upsell) => ({
-          title: upsell.title_override || "Selected product",
-          variant: numericVariantId(upsell.variant_gid),
-          badge: upsell.badge_text,
-        })),
-    [upsells]
-  );
+  }, [config]);
 
   const gamification = useMemo<GamificationConfig>(
     () => ({
@@ -1140,6 +1095,11 @@ export default function DashboardClient({ shop }: Props) {
                                       setStatus(`Gift R${index + 1} selected`);
                                     }}
                                   />
+                                  <Text as="p" variant="bodySm" tone="subdued">
+                                    Checkout will only price the gift at $0 if the selected
+                                    variant is priced at $0, or an automatic discount/Shopify
+                                    Function makes that variant free.
+                                  </Text>
 
                                   <InlineStack gap="300">
                                     <Box width="48%">
@@ -1252,82 +1212,6 @@ export default function DashboardClient({ shop }: Props) {
                 <BlockStack gap="400">
                   <InlineStack align="space-between">
                     <Text as="h2" variant="headingMd">
-                      Upsells
-                    </Text>
-                    <Checkbox
-                      label="Enable"
-                      checked={config.upsells_enabled}
-                      onChange={(value) => updateConfig("upsells_enabled", value)}
-                    />
-                  </InlineStack>
-                  <TextField
-                    label="Upsell heading"
-                    value={config.upsell_heading}
-                    onChange={(value) => updateConfig("upsell_heading", value)}
-                    autoComplete="off"
-                  />
-                  <ProductPickerDropdown
-                    label="Add upsell"
-                    helpText="Search products and choose the exact variant to show as a cart upsell."
-                    triggerLabel="Add upsell"
-                    actionLabel="Add upsell"
-                    selectedCount={upsells.length}
-                    onSelect={(variant) => {
-                      addUpsell(variant);
-                      setStatus(`${variant.productTitle} added as an upsell`);
-                    }}
-                  />
-                  <Divider />
-                  {upsells.length === 0 ? (
-                    <Text as="p" tone="subdued">
-                      No upsells selected.
-                    </Text>
-                  ) : (
-                    upsells.map((upsell, index) => (
-                      <InlineStack key={`${upsell.variant_gid}-${index}`} align="space-between">
-                        <BlockStack gap="100">
-                          <Text as="p" variant="bodyMd">
-                            {upsell.title_override || upsell.product_gid}
-                          </Text>
-                          <Text as="p" variant="bodySm" tone="subdued">
-                            Variant {numericVariantId(upsell.variant_gid)}
-                          </Text>
-                        </BlockStack>
-                        <InlineStack gap="200">
-                          <Select
-                            label="Enabled"
-                            labelHidden
-                            value={upsell.enabled ? "true" : "false"}
-                            options={[
-                              { label: "Enabled", value: "true" },
-                              { label: "Disabled", value: "false" },
-                            ]}
-                            onChange={(value) =>
-                              setUpsells((current) =>
-                                current.map((item, itemIndex) =>
-                                  itemIndex === index
-                                    ? { ...item, enabled: value === "true" }
-                                    : item
-                                )
-                              )
-                            }
-                          />
-                          <Button onClick={() => moveUpsell(index, -1)}>Up</Button>
-                          <Button onClick={() => moveUpsell(index, 1)}>Down</Button>
-                          <Button tone="critical" onClick={() => removeUpsell(index)}>
-                            Remove
-                          </Button>
-                        </InlineStack>
-                      </InlineStack>
-                    ))
-                  )}
-                </BlockStack>
-              </Card>
-
-              <Card>
-                <BlockStack gap="400">
-                  <InlineStack align="space-between">
-                    <Text as="h2" variant="headingMd">
                       Frequently bought together
                     </Text>
                     <Checkbox
@@ -1429,7 +1313,7 @@ export default function DashboardClient({ shop }: Props) {
                     />
                   </BlockStack>
                   <ProductPickerDropdown
-                    label="Add frequently bought together product"
+                    label="Add recommendation"
                     helpText="Search products and choose the exact variant to recommend in the cart drawer."
                     triggerLabel="Add product"
                     actionLabel="Add product"
@@ -1551,19 +1435,6 @@ export default function DashboardClient({ shop }: Props) {
                           </div>
                         </BlockStack>
                       </Box>
-                    ) : null}
-                    {config.upsells_enabled && previewItems.length ? (
-                      <BlockStack gap="200">
-                        <Text as="p" variant="headingSm">
-                          {config.upsell_heading}
-                        </Text>
-                        {previewItems.map((item) => (
-                          <InlineStack key={item.variant} align="space-between">
-                            <Text as="p">{item.title}</Text>
-                            {item.badge ? <Badge>{item.badge}</Badge> : null}
-                          </InlineStack>
-                        ))}
-                      </BlockStack>
                     ) : null}
                     {frequentlyBoughtTogether.enabled &&
                     frequentlyBoughtTogether.products.length ? (
