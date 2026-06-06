@@ -131,6 +131,32 @@ export async function GET(request: NextRequest) {
   ]);
 
   const config = configData as ConfigRow | null;
+  const defaultLayout = DEFAULT_CART_DRAWER_CONFIG.layout;
+  const configLayout = (config?.layout ?? {}) as Partial<typeof defaultLayout>;
+  const mergedLayout = {
+    ...defaultLayout,
+    ...configLayout,
+    gamification: {
+      ...defaultLayout.gamification,
+      ...(configLayout.gamification ?? {}),
+      country_targeting: {
+        ...defaultLayout.gamification.country_targeting,
+        ...(configLayout.gamification?.country_targeting ?? {}),
+      },
+      rewards: configLayout.gamification?.rewards?.length
+        ? configLayout.gamification.rewards
+        : defaultLayout.gamification.rewards,
+    },
+    frequentlyBoughtTogether: {
+      ...defaultLayout.frequentlyBoughtTogether,
+      ...(configLayout.frequentlyBoughtTogether ?? {}),
+      country_targeting: {
+        ...defaultLayout.frequentlyBoughtTogether.country_targeting,
+        ...(configLayout.frequentlyBoughtTogether?.country_targeting ?? {}),
+      },
+      products: configLayout.frequentlyBoughtTogether?.products ?? [],
+    },
+  };
   const mergedConfig = {
     ...DEFAULT_CART_DRAWER_CONFIG,
     ...(config ?? {}),
@@ -139,7 +165,7 @@ export async function GET(request: NextRequest) {
       ...DEFAULT_CART_DRAWER_CONFIG.typography,
       ...(config?.typography ?? {}),
     },
-    layout: { ...DEFAULT_CART_DRAWER_CONFIG.layout, ...(config?.layout ?? {}) },
+    layout: mergedLayout,
   };
 
   const upsells = mergedConfig.upsells_enabled
@@ -156,12 +182,14 @@ export async function GET(request: NextRequest) {
         checkoutButtonText: mergedConfig.checkout_button_text,
         continueShoppingText: mergedConfig.continue_shopping_text,
       },
+      gamification: mergedConfig.layout.gamification,
       freeShipping: {
         enabled: mergedConfig.free_shipping_enabled,
         thresholdCents: mergedConfig.free_shipping_threshold_cents,
         message: mergedConfig.free_shipping_message,
         successMessage: mergedConfig.free_shipping_success_message,
       },
+      frequentlyBoughtTogether: mergedConfig.layout.frequentlyBoughtTogether,
       upsellsHeading: mergedConfig.upsell_heading,
       upsells,
       colors: mergedConfig.colors,

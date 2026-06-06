@@ -37,17 +37,20 @@ type ProductVariantOption = {
   imageUrl: string | null;
 };
 
+type DrawerLayout = CartDrawerConfigInput["layout"];
+type GamificationConfig = NonNullable<DrawerLayout["gamification"]>;
+type GamifiedRewardConfig = GamificationConfig["rewards"][number];
+type FrequentlyBoughtTogetherConfig = NonNullable<DrawerLayout["frequentlyBoughtTogether"]>;
+type FbtProductConfig = FrequentlyBoughtTogetherConfig["products"][number];
+type CountryTargetingConfig = GamificationConfig["country_targeting"];
+
 type Props = {
   shop: string;
   host: string;
 };
 
-const cloneConfig = (): CartDrawerConfigInput => ({
-  ...DEFAULT_CART_DRAWER_CONFIG,
-  colors: { ...DEFAULT_CART_DRAWER_CONFIG.colors },
-  typography: { ...DEFAULT_CART_DRAWER_CONFIG.typography },
-  layout: { ...DEFAULT_CART_DRAWER_CONFIG.layout },
-});
+const cloneConfig = (): CartDrawerConfigInput =>
+  JSON.parse(JSON.stringify(DEFAULT_CART_DRAWER_CONFIG)) as CartDrawerConfigInput;
 
 function numericVariantId(variantGid: string) {
   return variantGid.split("/").pop() ?? variantGid;
@@ -65,6 +68,39 @@ function dollarsToCents(value: string) {
   const dollars = Number(value.replace(/[^0-9.]/g, ""));
   if (!Number.isFinite(dollars)) return 0;
   return Math.max(0, Math.round(dollars * 100));
+}
+
+function priceToCents(price: string | null) {
+  if (!price) return null;
+  const amount = Number(price);
+  return Number.isFinite(amount) ? Math.round(amount * 100) : null;
+}
+
+function countryCodesToInput(countries: string[]) {
+  return countries.join(", ");
+}
+
+function parseCountryCodes(value: string) {
+  return value
+    .split(/[,\s]+/)
+    .map((country) => country.trim().toUpperCase())
+    .filter((country) => /^[A-Z]{2}$/.test(country))
+    .slice(0, 40);
+}
+
+function buildFbtProduct(variant: ProductVariantOption): FbtProductConfig {
+  return {
+    product_gid: variant.productGid,
+    variant_gid: variant.variantGid,
+    variant_id: numericVariantId(variant.variantGid),
+    title: variant.productTitle,
+    variant_title: variant.variantTitle,
+    image_url: variant.imageUrl,
+    price_cents: priceToCents(variant.price),
+    compare_at_cents: null,
+    badge_text: null,
+    enabled: true,
+  };
 }
 
 async function getIdToken() {
@@ -247,6 +283,186 @@ export default function DashboardClient({ shop }: Props) {
     [upsells]
   );
 
+  const gamification = useMemo<GamificationConfig>(
+    () => ({
+      ...(DEFAULT_CART_DRAWER_CONFIG.layout.gamification as GamificationConfig),
+      ...((config.layout.gamification as Partial<GamificationConfig> | undefined) ?? {}),
+      country_targeting: {
+        ...(DEFAULT_CART_DRAWER_CONFIG.layout.gamification
+          .country_targeting as CountryTargetingConfig),
+        ...((config.layout.gamification?.country_targeting as
+          | Partial<CountryTargetingConfig>
+          | undefined) ?? {}),
+      },
+      rewards:
+        config.layout.gamification?.rewards?.length
+          ? (config.layout.gamification.rewards as GamifiedRewardConfig[])
+          : (DEFAULT_CART_DRAWER_CONFIG.layout.gamification
+              .rewards as GamifiedRewardConfig[]),
+    }),
+    [config.layout.gamification]
+  );
+
+  const frequentlyBoughtTogether = useMemo<FrequentlyBoughtTogetherConfig>(
+    () => ({
+      ...(DEFAULT_CART_DRAWER_CONFIG.layout
+        .frequentlyBoughtTogether as FrequentlyBoughtTogetherConfig),
+      ...((config.layout.frequentlyBoughtTogether as
+        | Partial<FrequentlyBoughtTogetherConfig>
+        | undefined) ?? {}),
+      country_targeting: {
+        ...(DEFAULT_CART_DRAWER_CONFIG.layout.frequentlyBoughtTogether
+          .country_targeting as CountryTargetingConfig),
+        ...((config.layout.frequentlyBoughtTogether?.country_targeting as
+          | Partial<CountryTargetingConfig>
+          | undefined) ?? {}),
+      },
+      products: config.layout.frequentlyBoughtTogether?.products ?? [],
+    }),
+    [config.layout.frequentlyBoughtTogether]
+  );
+
+  const updateGamification = useCallback((next: Partial<GamificationConfig>) => {
+    setConfig((current) => ({
+      ...current,
+      layout: {
+        ...current.layout,
+        gamification: {
+          ...(DEFAULT_CART_DRAWER_CONFIG.layout.gamification as GamificationConfig),
+          ...current.layout.gamification,
+          ...next,
+        },
+      },
+    }));
+  }, []);
+
+  const updateReward = useCallback(
+    <K extends keyof GamifiedRewardConfig>(
+      index: number,
+      key: K,
+      value: GamifiedRewardConfig[K]
+    ) => {
+      setConfig((current) => {
+        const currentGamification = {
+          ...(DEFAULT_CART_DRAWER_CONFIG.layout.gamification as GamificationConfig),
+          ...current.layout.gamification,
+        };
+        const rewards =
+          currentGamification.rewards?.length
+            ? [...currentGamification.rewards]
+            : [...DEFAULT_CART_DRAWER_CONFIG.layout.gamification.rewards];
+        rewards[index] = { ...rewards[index], [key]: value };
+
+        return {
+          ...current,
+          layout: {
+            ...current.layout,
+            gamification: { ...currentGamification, rewards },
+          },
+        };
+      });
+    },
+    []
+  );
+
+  const selectVariantAsRewardGift = useCallback(
+    (index: number, variant: ProductVariantOption) => {
+      setConfig((current) => {
+        const currentGamification = {
+          ...(DEFAULT_CART_DRAWER_CONFIG.layout.gamification as GamificationConfig),
+          ...current.layout.gamification,
+        };
+        const rewards =
+          currentGamification.rewards?.length
+            ? [...currentGamification.rewards]
+            : [...DEFAULT_CART_DRAWER_CONFIG.layout.gamification.rewards];
+
+        rewards[index] = {
+          ...rewards[index],
+          type: "free_gift",
+          product_gid: variant.productGid,
+          variant_gid: variant.variantGid,
+          variant_id: numericVariantId(variant.variantGid),
+          product_title: variant.productTitle,
+          image_url: variant.imageUrl ?? undefined,
+          price_cents: priceToCents(variant.price),
+          compare_at_cents: priceToCents(variant.price),
+          teaser_enabled: true,
+        };
+
+        return {
+          ...current,
+          layout: {
+            ...current.layout,
+            gamification: { ...currentGamification, rewards },
+          },
+        };
+      });
+    },
+    []
+  );
+
+  const updateFrequentlyBoughtTogether = useCallback(
+    (next: Partial<FrequentlyBoughtTogetherConfig>) => {
+      setConfig((current) => ({
+        ...current,
+        layout: {
+          ...current.layout,
+          frequentlyBoughtTogether: {
+            ...(DEFAULT_CART_DRAWER_CONFIG.layout
+              .frequentlyBoughtTogether as FrequentlyBoughtTogetherConfig),
+            ...current.layout.frequentlyBoughtTogether,
+            ...next,
+          },
+        },
+      }));
+    },
+    []
+  );
+
+  const addFbtProduct = useCallback((variant: ProductVariantOption) => {
+    setConfig((current) => {
+      const currentFbt = {
+        ...(DEFAULT_CART_DRAWER_CONFIG.layout
+          .frequentlyBoughtTogether as FrequentlyBoughtTogetherConfig),
+        ...current.layout.frequentlyBoughtTogether,
+      };
+      const exists = currentFbt.products.some((item) => item.variant_gid === variant.variantGid);
+      const products = exists
+        ? currentFbt.products
+        : [...currentFbt.products, buildFbtProduct(variant)].slice(0, 12);
+
+      return {
+        ...current,
+        layout: {
+          ...current.layout,
+          frequentlyBoughtTogether: { ...currentFbt, products, enabled: true },
+        },
+      };
+    });
+  }, []);
+
+  const removeFbtProduct = useCallback((index: number) => {
+    setConfig((current) => {
+      const currentFbt = {
+        ...(DEFAULT_CART_DRAWER_CONFIG.layout
+          .frequentlyBoughtTogether as FrequentlyBoughtTogetherConfig),
+        ...current.layout.frequentlyBoughtTogether,
+      };
+
+      return {
+        ...current,
+        layout: {
+          ...current.layout,
+          frequentlyBoughtTogether: {
+            ...currentFbt,
+            products: currentFbt.products.filter((_, itemIndex) => itemIndex !== index),
+          },
+        },
+      };
+    });
+  }, []);
+
   return (
     <AppProvider i18n={enTranslations}>
       <Page
@@ -360,6 +576,255 @@ export default function DashboardClient({ shop }: Props) {
 
               <Card>
                 <BlockStack gap="400">
+                  <InlineStack align="space-between">
+                    <Text as="h2" variant="headingMd">
+                      Gamified rewards
+                    </Text>
+                    <Checkbox
+                      label="Enable"
+                      checked={gamification.enabled}
+                      onChange={(value) => updateGamification({ enabled: value })}
+                    />
+                  </InlineStack>
+                  <TextField
+                    label="Cart header text"
+                    value={gamification.header_text}
+                    onChange={(value) => updateGamification({ header_text: value })}
+                    autoComplete="off"
+                  />
+                  <InlineStack gap="400" blockAlign="end">
+                    <Box width="48%">
+                      <TextField
+                        label="Timer text"
+                        value={gamification.timer_text}
+                        onChange={(value) => updateGamification({ timer_text: value })}
+                        autoComplete="off"
+                      />
+                    </Box>
+                    <Box width="24%">
+                      <TextField
+                        label="Timer minutes"
+                        type="number"
+                        value={String(gamification.timer_minutes)}
+                        onChange={(value) =>
+                          updateGamification({ timer_minutes: Number(value) || 5 })
+                        }
+                        autoComplete="off"
+                      />
+                    </Box>
+                    <Checkbox
+                      label="Show timer"
+                      checked={gamification.timer_enabled}
+                      onChange={(value) => updateGamification({ timer_enabled: value })}
+                    />
+                  </InlineStack>
+                  <Checkbox
+                    label="Treat subscription carts as already having free shipping and gifts"
+                    checked={gamification.subscription_perks_included}
+                    onChange={(value) =>
+                      updateGamification({ subscription_perks_included: value })
+                    }
+                  />
+                  <TextField
+                    label="Subscription perk message"
+                    value={gamification.subscription_message}
+                    onChange={(value) => updateGamification({ subscription_message: value })}
+                    autoComplete="off"
+                  />
+                  <Divider />
+                  <BlockStack gap="300">
+                    <Text as="h3" variant="headingSm">
+                      Country targeting
+                    </Text>
+                    <InlineStack gap="400" blockAlign="end">
+                      <Checkbox
+                        label="Target specific countries"
+                        checked={gamification.country_targeting.enabled}
+                        onChange={(value) =>
+                          updateGamification({
+                            country_targeting: {
+                              ...gamification.country_targeting,
+                              enabled: value,
+                            },
+                          })
+                        }
+                      />
+                      <Select
+                        label="Mode"
+                        value={gamification.country_targeting.mode}
+                        options={[
+                          { label: "Show only these countries", value: "include" },
+                          { label: "Hide from these countries", value: "exclude" },
+                        ]}
+                        onChange={(value) =>
+                          updateGamification({
+                            country_targeting: {
+                              ...gamification.country_targeting,
+                              mode: value as CountryTargetingConfig["mode"],
+                            },
+                          })
+                        }
+                      />
+                    </InlineStack>
+                    <TextField
+                      label="Country codes"
+                      value={countryCodesToInput(gamification.country_targeting.countries)}
+                      onChange={(value) =>
+                        updateGamification({
+                          country_targeting: {
+                            ...gamification.country_targeting,
+                            countries: parseCountryCodes(value),
+                          },
+                        })
+                      }
+                      helpText="Use ISO country codes, for example AU, US, NZ. Leave empty to show everywhere."
+                      autoComplete="off"
+                    />
+                  </BlockStack>
+                  <Divider />
+                  {gamification.rewards.map((reward, index) => (
+                    <div
+                      key={reward.id}
+                      style={{
+                        border: "1px solid #dfe3e8",
+                        borderRadius: 8,
+                        padding: 16,
+                      }}
+                    >
+                      <BlockStack gap="300">
+                        <InlineStack align="space-between" blockAlign="center">
+                          <Text as="h3" variant="headingSm">
+                            {`Reward ${index + 1} - ${reward.title}`}
+                          </Text>
+                          <Checkbox
+                            label="Enabled"
+                            checked={reward.enabled}
+                            onChange={(value) => updateReward(index, "enabled", value)}
+                          />
+                        </InlineStack>
+                        <InlineStack gap="300">
+                          <Box width="30%">
+                            <Select
+                              label="Reward type"
+                              value={reward.type}
+                              options={[
+                                { label: "Free gift", value: "free_gift" },
+                                { label: "Free shipping", value: "free_shipping" },
+                                { label: "Discount", value: "discount" },
+                                { label: "Custom reward", value: "custom" },
+                              ]}
+                              onChange={(value) =>
+                                updateReward(index, "type", value as GamifiedRewardConfig["type"])
+                              }
+                            />
+                          </Box>
+                          <Box width="30%">
+                            <TextField
+                              label="Spend goal"
+                              prefix="$"
+                              type="number"
+                              value={centsToDollarInput(reward.threshold_cents)}
+                              onChange={(value) =>
+                                updateReward(index, "threshold_cents", dollarsToCents(value))
+                              }
+                              autoComplete="off"
+                            />
+                          </Box>
+                          <Box width="30%">
+                            <TextField
+                              label="Reward title"
+                              value={reward.title}
+                              onChange={(value) => updateReward(index, "title", value)}
+                              autoComplete="off"
+                            />
+                          </Box>
+                        </InlineStack>
+                        <InlineStack gap="300">
+                          <Box width="20%">
+                            <TextField
+                              label="Icon"
+                              value={reward.icon ?? ""}
+                              onChange={(value) => updateReward(index, "icon", value)}
+                              autoComplete="off"
+                            />
+                          </Box>
+                          <Box width="38%">
+                            <TextField
+                              label="Before goal text"
+                              value={reward.before_text}
+                              onChange={(value) => updateReward(index, "before_text", value)}
+                              autoComplete="off"
+                            />
+                          </Box>
+                          <Box width="38%">
+                            <TextField
+                              label="After goal text"
+                              value={reward.after_text}
+                              onChange={(value) => updateReward(index, "after_text", value)}
+                              autoComplete="off"
+                            />
+                          </Box>
+                        </InlineStack>
+                        {reward.type === "free_gift" ? (
+                          <BlockStack gap="300">
+                            <InlineStack align="space-between" blockAlign="center">
+                              <Text as="p" variant="bodyMd">
+                                {reward.product_title
+                                  ? `Gift: ${reward.product_title}`
+                                  : "No gift product selected"}
+                              </Text>
+                              <Badge tone={reward.variant_id ? "success" : "attention"}>
+                                {reward.variant_id ? "Gift selected" : "Needs gift"}
+                              </Badge>
+                            </InlineStack>
+                            <InlineStack gap="300">
+                              <Box width="48%">
+                                <TextField
+                                  label="Teaser heading"
+                                  value={reward.teaser_heading ?? ""}
+                                  onChange={(value) =>
+                                    updateReward(index, "teaser_heading", value)
+                                  }
+                                  autoComplete="off"
+                                />
+                              </Box>
+                              <Box width="48%">
+                                <TextField
+                                  label="Teaser subheading"
+                                  value={reward.teaser_subheading ?? ""}
+                                  onChange={(value) =>
+                                    updateReward(index, "teaser_subheading", value)
+                                  }
+                                  autoComplete="off"
+                                />
+                              </Box>
+                            </InlineStack>
+                          </BlockStack>
+                        ) : null}
+                        {reward.type === "discount" ? (
+                          <TextField
+                            label="Discount code or label"
+                            value={reward.discount_code ?? ""}
+                            onChange={(value) => updateReward(index, "discount_code", value)}
+                            autoComplete="off"
+                          />
+                        ) : null}
+                        {reward.type === "custom" ? (
+                          <TextField
+                            label="Custom reward label"
+                            value={reward.custom_label ?? ""}
+                            onChange={(value) => updateReward(index, "custom_label", value)}
+                            autoComplete="off"
+                          />
+                        ) : null}
+                      </BlockStack>
+                    </div>
+                  ))}
+                </BlockStack>
+              </Card>
+
+              <Card>
+                <BlockStack gap="400">
                   <Text as="h2" variant="headingMd">
                     Design
                   </Text>
@@ -464,7 +929,20 @@ export default function DashboardClient({ shop }: Props) {
                           </Text>
                         </BlockStack>
                       </InlineStack>
-                      <Button onClick={() => addUpsell(variant)}>Add</Button>
+                      <InlineStack gap="200">
+                        <Button onClick={() => addUpsell(variant)}>Add upsell</Button>
+                        <Button onClick={() => addFbtProduct(variant)}>Add FBT</Button>
+                        {gamification.rewards.map((reward, rewardIndex) =>
+                          reward.type === "free_gift" ? (
+                            <Button
+                              key={`${reward.id}-${variant.variantGid}`}
+                              onClick={() => selectVariantAsRewardGift(rewardIndex, variant)}
+                            >
+                              {`Gift R${rewardIndex + 1}`}
+                            </Button>
+                          ) : null
+                        )}
+                      </InlineStack>
                     </InlineStack>
                   ))}
                   <Divider />
@@ -513,6 +991,140 @@ export default function DashboardClient({ shop }: Props) {
                   )}
                 </BlockStack>
               </Card>
+
+              <Card>
+                <BlockStack gap="400">
+                  <InlineStack align="space-between">
+                    <Text as="h2" variant="headingMd">
+                      Frequently bought together
+                    </Text>
+                    <Checkbox
+                      label="Enable"
+                      checked={frequentlyBoughtTogether.enabled}
+                      onChange={(value) => updateFrequentlyBoughtTogether({ enabled: value })}
+                    />
+                  </InlineStack>
+                  <TextField
+                    label="Section heading"
+                    value={frequentlyBoughtTogether.heading}
+                    onChange={(value) => updateFrequentlyBoughtTogether({ heading: value })}
+                    autoComplete="off"
+                  />
+                  <InlineStack gap="400">
+                    <Box width="30%">
+                      <TextField
+                        label="Products displayed"
+                        type="number"
+                        value={String(frequentlyBoughtTogether.display_limit)}
+                        onChange={(value) =>
+                          updateFrequentlyBoughtTogether({
+                            display_limit: Number(value) || 4,
+                          })
+                        }
+                        autoComplete="off"
+                      />
+                    </Box>
+                    <Box width="30%">
+                      <TextField
+                        label="Add button text"
+                        value={frequentlyBoughtTogether.add_button_text}
+                        onChange={(value) =>
+                          updateFrequentlyBoughtTogether({ add_button_text: value })
+                        }
+                        autoComplete="off"
+                      />
+                    </Box>
+                    <Box width="30%">
+                      <TextField
+                        label="Details text"
+                        value={frequentlyBoughtTogether.details_text}
+                        onChange={(value) =>
+                          updateFrequentlyBoughtTogether({ details_text: value })
+                        }
+                        autoComplete="off"
+                      />
+                    </Box>
+                  </InlineStack>
+                  <BlockStack gap="300">
+                    <Text as="h3" variant="headingSm">
+                      Country targeting
+                    </Text>
+                    <InlineStack gap="400" blockAlign="end">
+                      <Checkbox
+                        label="Target specific countries"
+                        checked={frequentlyBoughtTogether.country_targeting.enabled}
+                        onChange={(value) =>
+                          updateFrequentlyBoughtTogether({
+                            country_targeting: {
+                              ...frequentlyBoughtTogether.country_targeting,
+                              enabled: value,
+                            },
+                          })
+                        }
+                      />
+                      <Select
+                        label="Mode"
+                        value={frequentlyBoughtTogether.country_targeting.mode}
+                        options={[
+                          { label: "Show only these countries", value: "include" },
+                          { label: "Hide from these countries", value: "exclude" },
+                        ]}
+                        onChange={(value) =>
+                          updateFrequentlyBoughtTogether({
+                            country_targeting: {
+                              ...frequentlyBoughtTogether.country_targeting,
+                              mode: value as CountryTargetingConfig["mode"],
+                            },
+                          })
+                        }
+                      />
+                    </InlineStack>
+                    <TextField
+                      label="Country codes"
+                      value={countryCodesToInput(
+                        frequentlyBoughtTogether.country_targeting.countries
+                      )}
+                      onChange={(value) =>
+                        updateFrequentlyBoughtTogether({
+                          country_targeting: {
+                            ...frequentlyBoughtTogether.country_targeting,
+                            countries: parseCountryCodes(value),
+                          },
+                        })
+                      }
+                      helpText="Use ISO country codes, for example AU, US, NZ. Leave empty to show everywhere."
+                      autoComplete="off"
+                    />
+                  </BlockStack>
+                  <Divider />
+                  {frequentlyBoughtTogether.products.length === 0 ? (
+                    <Text as="p" tone="subdued">
+                      Search products above, then choose Add FBT.
+                    </Text>
+                  ) : (
+                    frequentlyBoughtTogether.products.map((item, index) => (
+                      <InlineStack key={`${item.variant_gid}-${index}`} align="space-between">
+                        <InlineStack gap="300" blockAlign="center">
+                          <Thumbnail alt={item.title} source={item.image_url || ""} size="small" />
+                          <BlockStack gap="100">
+                            <Text as="p" variant="bodyMd">
+                              {item.title}
+                            </Text>
+                            <Text as="p" tone="subdued">
+                              {item.price_cents == null
+                                ? "No price saved"
+                                : `$${centsToDollarInput(item.price_cents)}`}
+                            </Text>
+                          </BlockStack>
+                        </InlineStack>
+                        <Button tone="critical" onClick={() => removeFbtProduct(index)}>
+                          Remove
+                        </Button>
+                      </InlineStack>
+                    ))
+                  )}
+                </BlockStack>
+              </Card>
             </BlockStack>
           </Layout.Section>
 
@@ -530,10 +1142,33 @@ export default function DashboardClient({ shop }: Props) {
                   <BlockStack gap="300">
                     <InlineStack align="space-between">
                       <Text as="h3" variant="headingMd">
-                        {config.drawer_title}
+                        {gamification.enabled ? gamification.header_text : config.drawer_title}
                       </Text>
                       <Badge>{config.enabled ? "On" : "Off"}</Badge>
                     </InlineStack>
+                    {gamification.enabled && gamification.timer_enabled ? (
+                      <Box background="bg-fill-success-secondary" borderRadius="200" padding="200">
+                        <Text as="p">
+                          {`${gamification.timer_text} ${gamification.timer_minutes}:00`}
+                        </Text>
+                      </Box>
+                    ) : null}
+                    {gamification.enabled ? (
+                      <BlockStack gap="100">
+                        <Text as="p" variant="headingSm">
+                          Reward ladder
+                        </Text>
+                        {gamification.rewards
+                          .filter((reward) => reward.enabled)
+                          .slice(0, 4)
+                          .map((reward) => (
+                            <InlineStack key={reward.id} align="space-between">
+                              <Text as="p">{`${reward.icon ?? ""} ${reward.title}`}</Text>
+                              <Badge>{`$${centsToDollarInput(reward.threshold_cents)}`}</Badge>
+                            </InlineStack>
+                          ))}
+                      </BlockStack>
+                    ) : null}
                     <Text as="p" tone="subdued">
                       {config.empty_title}
                     </Text>
@@ -585,6 +1220,22 @@ export default function DashboardClient({ shop }: Props) {
                             {item.badge ? <Badge>{item.badge}</Badge> : null}
                           </InlineStack>
                         ))}
+                      </BlockStack>
+                    ) : null}
+                    {frequentlyBoughtTogether.enabled &&
+                    frequentlyBoughtTogether.products.length ? (
+                      <BlockStack gap="200">
+                        <Text as="p" variant="headingSm">
+                          {frequentlyBoughtTogether.heading}
+                        </Text>
+                        {frequentlyBoughtTogether.products
+                          .slice(0, frequentlyBoughtTogether.display_limit)
+                          .map((item) => (
+                            <InlineStack key={item.variant_gid} align="space-between">
+                              <Text as="p">{item.title}</Text>
+                              <Badge>{frequentlyBoughtTogether.add_button_text}</Badge>
+                            </InlineStack>
+                          ))}
                       </BlockStack>
                     ) : null}
                     <Button fullWidth>{config.checkout_button_text}</Button>

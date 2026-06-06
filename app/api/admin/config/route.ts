@@ -27,21 +27,46 @@ export async function GET(request: NextRequest) {
       .order("sort_order"),
   ]);
 
+  const configRow = config as ConfigRow | null;
+  const defaultLayout = DEFAULT_CART_DRAWER_CONFIG.layout;
+  const configLayout = (configRow?.layout ?? {}) as Partial<typeof defaultLayout>;
+  const mergedLayout = {
+    ...defaultLayout,
+    ...configLayout,
+    gamification: {
+      ...defaultLayout.gamification,
+      ...(configLayout.gamification ?? {}),
+      country_targeting: {
+        ...defaultLayout.gamification.country_targeting,
+        ...(configLayout.gamification?.country_targeting ?? {}),
+      },
+      rewards: configLayout.gamification?.rewards?.length
+        ? configLayout.gamification.rewards
+        : defaultLayout.gamification.rewards,
+    },
+    frequentlyBoughtTogether: {
+      ...defaultLayout.frequentlyBoughtTogether,
+      ...(configLayout.frequentlyBoughtTogether ?? {}),
+      country_targeting: {
+        ...defaultLayout.frequentlyBoughtTogether.country_targeting,
+        ...(configLayout.frequentlyBoughtTogether?.country_targeting ?? {}),
+      },
+      products: configLayout.frequentlyBoughtTogether?.products ?? [],
+    },
+  };
+
   const mergedConfig = {
     ...DEFAULT_CART_DRAWER_CONFIG,
-    ...(config as ConfigRow | null),
+    ...configRow,
     colors: {
       ...DEFAULT_CART_DRAWER_CONFIG.colors,
-      ...((config as ConfigRow | null)?.colors ?? {}),
+      ...(configRow?.colors ?? {}),
     },
     typography: {
       ...DEFAULT_CART_DRAWER_CONFIG.typography,
-      ...((config as ConfigRow | null)?.typography ?? {}),
+      ...(configRow?.typography ?? {}),
     },
-    layout: {
-      ...DEFAULT_CART_DRAWER_CONFIG.layout,
-      ...((config as ConfigRow | null)?.layout ?? {}),
-    },
+    layout: mergedLayout,
   };
 
   return NextResponse.json({
