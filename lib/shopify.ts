@@ -34,6 +34,10 @@ export function adminGraphqlClient(session: Session) {
   return new (getShopify().clients.Graphql)({ session });
 }
 
+export function adminRestClient(session: Session) {
+  return new (getShopify().clients.Rest)({ session });
+}
+
 export async function verifyWebhookHmac(rawBody: string, hmacHeader: string | null) {
   if (!hmacHeader) return false;
 
