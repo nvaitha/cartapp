@@ -470,6 +470,14 @@
   cursor: default !important;
 }
 
+.lavoc-cart-gift-error {
+  color: #b42318;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
+  margin-top: 8px;
+}
+
 .lavoc-cart-fbt {
   border: 1px solid #111111;
   border-radius: var(--lavoc-cart-radius);

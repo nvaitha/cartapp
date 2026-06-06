@@ -13,7 +13,9 @@
     busy: false,
     timerEndsAt: null,
     giftAddingRewardId: null,
-    giftAddedRewardIds: {}
+    giftAddedRewardIds: {},
+    giftClaimedRewardIds: {},
+    giftErrorsByRewardId: {}
   };
   var nativeOpenTimer = null;
   var internalCartMutationDepth = 0;
@@ -119,10 +121,16 @@
 
   function cartHasVariant(variantId) {
     var numericId = Number(variantId);
+    if (!Number.isFinite(numericId)) return false;
     var cart = state.cart || { items: [] };
     return (cart.items || []).some(function (item) {
       return Number(item.variant_id) === numericId;
     });
+  }
+
+  function variantNumericId(variantId) {
+    var match = String(variantId || "").match(/(\d+)$/);
+    return match ? Number(match[1]) : NaN;
   }
 
   function fetchCart() {
@@ -251,13 +259,49 @@
       });
   }
 
+  function rewardProgressPercent(rewards, cartTotal) {
+    if (!rewards.length) return 0;
+
+    var thresholds = rewards.map(function (reward) {
+      return Math.max(0, Number(reward.threshold_cents || 0));
+    });
+    var total = Math.max(0, Number(cartTotal || 0));
+
+    if (rewards.length === 1) {
+      var onlyGoal = Math.max(1, thresholds[0]);
+      return Math.min(100, Math.max(0, Math.round((total / onlyGoal) * 100)));
+    }
+
+    var stepSize = 100 / rewards.length;
+    if (total <= thresholds[0]) {
+      var firstGoal = Math.max(1, thresholds[0]);
+      return Math.min(stepSize, Math.max(0, Math.round((total / firstGoal) * stepSize)));
+    }
+
+    for (var index = 1; index < thresholds.length; index += 1) {
+      var previousGoal = thresholds[index - 1];
+      var currentGoal = Math.max(previousGoal + 1, thresholds[index]);
+      var previousFill = stepSize * index;
+      var currentFill = stepSize * (index + 1);
+
+      if (total < currentGoal) {
+        var segmentProgress = (total - previousGoal) / (currentGoal - previousGoal);
+        return Math.min(
+          currentFill,
+          Math.max(previousFill, Math.round(previousFill + segmentProgress * (currentFill - previousFill)))
+        );
+      }
+    }
+
+    return 100;
+  }
+
   function rewardsHtml(gamification) {
     var rewards = activeRewards(gamification);
     var cart = state.cart || { total_price: 0 };
     if (!rewards.length) return "";
 
-    var maxGoal = Math.max(1, Number(rewards[rewards.length - 1].threshold_cents || 1));
-    var width = Math.min(100, Math.max(0, Math.round((cart.total_price / maxGoal) * 100)));
+    var width = rewardProgressPercent(rewards, cart.total_price);
     var nextReward = rewards.find(function (reward) {
       return cart.total_price < Number(reward.threshold_cents || 0) && !rewardIncludedBySubscription(reward, gamification, cart);
     });
@@ -328,6 +372,7 @@
       giftReward.variant_id &&
       (cartHasVariant(giftReward.variant_id) || state.giftAddedRewardIds[giftReward.id]);
     var adding = state.giftAddingRewardId === giftReward.id;
+    var error = state.giftErrorsByRewardId[giftReward.id];
     var message = included
       ? (giftReward.subscription_text || gamification.subscription_message || "Your gift is included with subscription.")
       : unlocked
@@ -363,6 +408,7 @@
         : added
           ? '<button type="button" class="lavoc-cart-gift-added" disabled>Gift added</button>'
           : "") +
+      (error ? '<div class="lavoc-cart-gift-error">' + escapeHtml(error) + "</div>" : "") +
       "</div></div></section>"
     );
   }
@@ -677,19 +723,63 @@
       });
   }
 
-  function addVariantToCart(variantId, properties) {
-    var requestSequence = nextCartSequence();
-    state.busy = true;
-    render();
+  function cartAddPayloads(variantId, properties) {
+    var numericId = variantNumericId(variantId);
+    if (!Number.isFinite(numericId)) return [];
+    var item = { id: numericId, quantity: 1, properties: properties || {} };
+    return [
+      { id: item.id, quantity: item.quantity, properties: item.properties },
+      { items: [item] }
+    ];
+  }
+
+  function readCartError(response) {
+    return response
+      .json()
+      .then(function (payload) {
+        return payload && (payload.description || payload.message || payload.error);
+      })
+      .catch(function () {
+        return response.text().catch(function () {
+          return "";
+        });
+      })
+      .then(function (message) {
+        return message || "Cart add failed";
+      });
+  }
+
+  function postCartAddPayload(payload) {
     return withInternalCartMutation(function () {
       return fetch(cartUrl("cart/add.js"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: [{ id: Number(variantId), quantity: 1, properties: properties || {} }] })
+        body: JSON.stringify(payload)
       });
-    })
+    });
+  }
+
+  function addVariantToCart(variantId, properties) {
+    var requestSequence = nextCartSequence();
+    var payloads = cartAddPayloads(variantId, properties);
+    if (!payloads.length) return Promise.reject(new Error("Missing gift variant"));
+
+    state.busy = true;
+    render();
+
+    return postCartAddPayload(payloads[0])
       .then(function (response) {
-        if (!response.ok) throw new Error("Cart add failed");
+        if (response.ok) return response;
+        return readCartError(response).then(function (firstError) {
+          return postCartAddPayload(payloads[1]).then(function (fallbackResponse) {
+            if (fallbackResponse.ok) return fallbackResponse;
+            return readCartError(fallbackResponse).then(function (fallbackError) {
+              throw new Error(fallbackError || firstError);
+            });
+          });
+        });
+      })
+      .then(function () {
         return refreshCart(requestSequence);
       })
       .finally(function () {
@@ -715,6 +805,8 @@
     }
 
     state.giftAddingRewardId = reward.id;
+    state.giftClaimedRewardIds[reward.id] = true;
+    delete state.giftErrorsByRewardId[reward.id];
     render();
 
     return addVariantToCart(reward.variant_id, {
@@ -725,10 +817,34 @@
       .then(function () {
         state.giftAddedRewardIds[reward.id] = true;
       })
+      .catch(function (error) {
+        state.giftErrorsByRewardId[reward.id] =
+          error && error.message ? error.message : "Unable to add gift. Please try again.";
+        throw error;
+      })
       .finally(function () {
         state.giftAddingRewardId = null;
         render();
       });
+  }
+
+  function claimedMissingGift() {
+    var gamification = getGamification();
+    var cart = state.cart || { total_price: 0 };
+    return activeRewards(gamification).find(function (reward) {
+      return (
+        reward.type === "free_gift" &&
+        reward.variant_id &&
+        cart.total_price >= Number(reward.threshold_cents || 0) &&
+        state.giftClaimedRewardIds[reward.id] &&
+        !rewardIncludedBySubscription(reward, gamification, cart) &&
+        !cartHasVariant(reward.variant_id)
+      );
+    });
+  }
+
+  function goToCheckout(href) {
+    window.location.href = href || cartUrl("checkout");
   }
 
   mount.addEventListener("click", function (event) {
@@ -755,7 +871,21 @@
 
     var gift = target.closest("[data-lavoc-gift]");
     if (gift) {
-      addRewardGift(gift.getAttribute("data-lavoc-gift"));
+      event.preventDefault();
+      addRewardGift(gift.getAttribute("data-lavoc-gift")).catch(function () {});
+      return;
+    }
+
+    var checkout = target.closest(".lavoc-cart-checkout");
+    if (checkout) {
+      var missingGift = claimedMissingGift();
+      if (!missingGift) return;
+      event.preventDefault();
+      addRewardGift(missingGift.id)
+        .then(function () {
+          goToCheckout(checkout.getAttribute("href"));
+        })
+        .catch(function () {});
     }
   });
 
