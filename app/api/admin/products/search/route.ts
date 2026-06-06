@@ -7,6 +7,9 @@ type RestVariant = {
   title: string;
   price: string;
   compare_at_price?: string | null;
+  inventory_management?: string | null;
+  inventory_policy?: string | null;
+  inventory_quantity?: number | null;
 };
 
 type RestProduct = {
@@ -65,6 +68,14 @@ function normalizeProduct(product: RestProduct): ProductSearchProduct {
   };
 }
 
+function variantAvailable(variant: RestVariant) {
+  return (
+    !variant.inventory_management ||
+    variant.inventory_policy === "continue" ||
+    Number(variant.inventory_quantity ?? 0) > 0
+  );
+}
+
 export async function GET(request: NextRequest) {
   const auth = await requireAuth(request);
   if (auth instanceof NextResponse) return auth;
@@ -110,18 +121,22 @@ export async function GET(request: NextRequest) {
       .map(normalizeProduct);
 
     const variants = products.flatMap((product) =>
-      product.variants.map((variant) => ({
-        productGid: `gid://shopify/Product/${product.id}`,
-        productTitle: product.title,
-        productHandle: null,
-        productStatus: product.status,
-        variantGid: `gid://shopify/ProductVariant/${variant.id}`,
-        variantTitle: variant.title === "Default Title" ? null : variant.title,
-        price: variant.price ?? null,
-        compareAtPrice: variant.compare_at_price ?? null,
-        imageUrl: product.images[0]?.src ?? null,
-      }))
-    );
+        product.variants.map((variant) => ({
+          productGid: `gid://shopify/Product/${product.id}`,
+          productTitle: product.title,
+          productHandle: null,
+          productStatus: product.status,
+          variantGid: `gid://shopify/ProductVariant/${variant.id}`,
+          variantTitle: variant.title === "Default Title" ? null : variant.title,
+          price: variant.price ?? null,
+          compareAtPrice: variant.compare_at_price ?? null,
+          imageUrl: product.images[0]?.src ?? null,
+          available: variantAvailable(variant),
+          inventoryQuantity: variant.inventory_quantity ?? null,
+          inventoryPolicy: variant.inventory_policy ?? null,
+          inventoryManagement: variant.inventory_management ?? null,
+        }))
+      );
 
     return NextResponse.json({ products, variants });
   } catch (error) {

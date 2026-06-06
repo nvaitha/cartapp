@@ -133,6 +133,19 @@
     return match ? Number(match[1]) : NaN;
   }
 
+  function cleanDiscountCode(code) {
+    return String(code || "").trim();
+  }
+
+  function discountCheckoutUrl(code) {
+    return cartUrl(
+      "discount/" +
+        encodeURIComponent(code) +
+        "?redirect=" +
+        encodeURIComponent(cartUrl("checkout"))
+    );
+  }
+
   function fetchCart() {
     return fetch(cartUrl("cart.js"), {
       headers: { Accept: "application/json" },
@@ -296,6 +309,35 @@
     return 100;
   }
 
+  function rewardUnavailable(reward) {
+    return reward && reward.available === false;
+  }
+
+  function unlockedDiscountCode() {
+    var gamification = getGamification();
+    var cart = state.cart || { total_price: 0 };
+    var rewards = activeRewards(gamification)
+      .filter(function (reward) {
+        return cart.total_price >= Number(reward.threshold_cents || 0);
+      })
+      .reverse();
+
+    for (var index = 0; index < rewards.length; index += 1) {
+      var reward = rewards[index];
+      var code = cleanDiscountCode(reward.discount_code);
+      if (!code) continue;
+      if (reward.type === "free_gift" && reward.variant_id && !cartHasVariant(reward.variant_id)) continue;
+      return code;
+    }
+
+    return "";
+  }
+
+  function checkoutHref() {
+    var discountCode = unlockedDiscountCode();
+    return discountCode ? discountCheckoutUrl(discountCode) : cartUrl("checkout");
+  }
+
   function rewardsHtml(gamification) {
     var rewards = activeRewards(gamification);
     var cart = state.cart || { total_price: 0 };
@@ -372,6 +414,7 @@
       giftReward.variant_id &&
       (cartHasVariant(giftReward.variant_id) || state.giftAddedRewardIds[giftReward.id]);
     var adding = state.giftAddingRewardId === giftReward.id;
+    var unavailable = rewardUnavailable(giftReward);
     var error = state.giftErrorsByRewardId[giftReward.id];
     var message = included
       ? (giftReward.subscription_text || gamification.subscription_message || "Your gift is included with subscription.")
@@ -397,7 +440,9 @@
       "<strong>" +
       escapeHtml(giftReward.teaser_subheading || "$0 Free") +
       "</strong></div>" +
-      (unlocked && giftReward.variant_id && !included && !added
+      (unlocked && giftReward.variant_id && unavailable && !added
+        ? '<button type="button" disabled>Gift unavailable</button>'
+        : unlocked && giftReward.variant_id && !included && !added
         ? '<button type="button" data-lavoc-gift="' +
           escapeHtml(giftReward.id) +
           '"' +
@@ -408,6 +453,9 @@
         : added
           ? '<button type="button" class="lavoc-cart-gift-added" disabled>Gift added</button>'
           : "") +
+      (unlocked && giftReward.price_cents > 0 && !cleanDiscountCode(giftReward.discount_code)
+        ? '<div class="lavoc-cart-gift-error">This gift needs a Shopify discount code to be free at checkout.</div>'
+        : "") +
       (error ? '<div class="lavoc-cart-gift-error">' + escapeHtml(error) + "</div>" : "") +
       "</div></div></section>"
     );
@@ -519,7 +567,7 @@
       money(cart.total_price || 0) +
       "</span></div>" +
       '<a class="lavoc-cart-checkout" href="' +
-      cartUrl("checkout") +
+      checkoutHref() +
       '">' +
       escapeHtml(copy.checkoutButtonText || "Check out") +
       "</a>" +
@@ -798,6 +846,11 @@
       return item.id === rewardId;
     });
     if (!reward || !reward.variant_id) return Promise.resolve();
+    if (rewardUnavailable(reward)) {
+      state.giftErrorsByRewardId[reward.id] = "This gift is currently sold out.";
+      render();
+      return Promise.reject(new Error(state.giftErrorsByRewardId[reward.id]));
+    }
     if (cartHasVariant(reward.variant_id) || state.giftAddedRewardIds[reward.id]) {
       state.giftAddedRewardIds[reward.id] = true;
       render();
@@ -883,7 +936,7 @@
       event.preventDefault();
       addRewardGift(missingGift.id)
         .then(function () {
-          goToCheckout(checkout.getAttribute("href"));
+          goToCheckout(checkoutHref());
         })
         .catch(function () {});
     }

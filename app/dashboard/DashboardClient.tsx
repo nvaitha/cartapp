@@ -37,6 +37,10 @@ type ProductVariantOption = {
   price: string | null;
   compareAtPrice: string | null;
   imageUrl: string | null;
+  available?: boolean;
+  inventoryQuantity?: number | null;
+  inventoryPolicy?: string | null;
+  inventoryManagement?: string | null;
 };
 
 type ProductSearchVariant = {
@@ -44,6 +48,9 @@ type ProductSearchVariant = {
   title: string;
   price: string;
   compare_at_price?: string | null;
+  inventory_management?: string | null;
+  inventory_policy?: string | null;
+  inventory_quantity?: number | null;
 };
 
 type ProductSearchProduct = {
@@ -104,6 +111,14 @@ function formatProductSearchVariantPrice(variant: ProductSearchVariant) {
   return `$${centsToDollarInput(priceCents)}`;
 }
 
+function productSearchVariantAvailable(variant: ProductSearchVariant) {
+  return (
+    !variant.inventory_management ||
+    variant.inventory_policy === "continue" ||
+    Number(variant.inventory_quantity ?? 0) > 0
+  );
+}
+
 function variantOptionFromProduct(
   product: ProductSearchProduct,
   variant: ProductSearchVariant
@@ -118,6 +133,10 @@ function variantOptionFromProduct(
     price: variant.price ?? null,
     compareAtPrice: variant.compare_at_price ?? null,
     imageUrl: product.images[0]?.src ?? null,
+    available: productSearchVariantAvailable(variant),
+    inventoryQuantity: variant.inventory_quantity ?? null,
+    inventoryPolicy: variant.inventory_policy ?? null,
+    inventoryManagement: variant.inventory_management ?? null,
   };
 }
 
@@ -352,6 +371,7 @@ function ProductPickerDropdown({
                       {product.variants.length ? (
                         product.variants.map((productVariant) => {
                           const variant = variantOptionFromProduct(product, productVariant);
+                          const variantAvailable = productSearchVariantAvailable(productVariant);
 
                           return (
                             <InlineStack
@@ -366,14 +386,16 @@ function ProductPickerDropdown({
                                   : productVariant.title}{" "}
                                 - {formatProductSearchVariantPrice(productVariant)}
                               </Text>
+                              {!variantAvailable ? <Badge tone="critical">Sold out</Badge> : null}
                               <Button
                                 size="slim"
+                                disabled={!variantAvailable}
                                 onClick={() => {
                                   onSelect(variant);
                                   if (closeOnSelect) setOpen(false);
                                 }}
                               >
-                                {actionLabel}
+                                {variantAvailable ? actionLabel : "Unavailable"}
                               </Button>
                             </InlineStack>
                           );
@@ -584,6 +606,10 @@ export default function DashboardClient({ shop }: Props) {
           variant_id: numericVariantId(variant.variantGid),
           product_title: variant.productTitle,
           image_url: variant.imageUrl ?? undefined,
+          available: variant.available,
+          inventory_quantity: variant.inventoryQuantity,
+          inventory_policy: variant.inventoryPolicy,
+          inventory_management: variant.inventoryManagement,
           price_cents: priceToCents(variant.price),
           compare_at_cents: priceToCents(variant.compareAtPrice),
           teaser_enabled: true,
@@ -619,6 +645,10 @@ export default function DashboardClient({ shop }: Props) {
         variant_id: undefined,
         product_title: undefined,
         image_url: undefined,
+        available: undefined,
+        inventory_quantity: undefined,
+        inventory_policy: undefined,
+        inventory_management: undefined,
         price_cents: null,
         compare_at_cents: null,
       };
@@ -1067,6 +1097,18 @@ export default function DashboardClient({ shop }: Props) {
                                           <Text as="p" variant="bodySm" tone="subdued">
                                             Variant {reward.variant_id}
                                           </Text>
+                                          <InlineStack gap="200">
+                                            {reward.available === false ? (
+                                              <Badge tone="critical">Sold out</Badge>
+                                            ) : null}
+                                            {reward.price_cents && reward.price_cents > 0 ? (
+                                              <Badge tone="attention">
+                                                {`Price $${centsToDollarInput(reward.price_cents)}`}
+                                              </Badge>
+                                            ) : (
+                                              <Badge tone="success">$0 variant</Badge>
+                                            )}
+                                          </InlineStack>
                                         </BlockStack>
                                       </InlineStack>
                                       <Button
@@ -1100,6 +1142,15 @@ export default function DashboardClient({ shop }: Props) {
                                     variant is priced at $0, or an automatic discount/Shopify
                                     Function makes that variant free.
                                   </Text>
+                                  <TextField
+                                    label="Gift discount code"
+                                    value={reward.discount_code ?? ""}
+                                    onChange={(value) =>
+                                      updateReward(index, "discount_code", value)
+                                    }
+                                    helpText="Create a Shopify discount that makes this gift variant free, then enter its code here. The drawer will apply it when checkout starts."
+                                    autoComplete="off"
+                                  />
 
                                   <InlineStack gap="300">
                                     <Box width="48%">

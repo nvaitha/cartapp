@@ -328,8 +328,7 @@
   position: relative;
 }
 
-.lavoc-cart-reward-rail::before,
-.lavoc-cart-reward-fill {
+.lavoc-cart-reward-rail::before {
   border-radius: 999px;
   content: "";
   height: 8px;
@@ -339,15 +338,19 @@
 }
 
 .lavoc-cart-reward-rail::before {
-  background: #8f8182;
+  background: linear-gradient(
+    90deg,
+    #6f8f45 0%,
+    #6f8f45 var(--lavoc-cart-reward-progress, 0%),
+    #8f8182 var(--lavoc-cart-reward-progress, 0%),
+    #8f8182 100%
+  );
   right: 10px;
+  z-index: 1;
 }
 
 .lavoc-cart-reward-fill {
-  background: #6f8f45;
-  width: var(--lavoc-cart-reward-progress, 0%);
-  transition: width 180ms ease;
-  z-index: 1;
+  display: none;
 }
 
 .lavoc-cart-reward-node {
@@ -461,6 +464,12 @@
   cursor: pointer;
   font-weight: 800;
   padding: 9px 12px;
+}
+
+.lavoc-cart-gift button:disabled,
+.lavoc-cart-fbt-item button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
 }
 
 .lavoc-cart-gift-added {
