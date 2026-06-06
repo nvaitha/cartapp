@@ -14,6 +14,8 @@
   };
   var nativeOpenTimer = null;
   var internalCartMutationDepth = 0;
+  var cartSequence = 0;
+  var sectionSequence = 0;
 
   function isCartMutationUrl(value) {
     var url = String(value || "");
@@ -52,6 +54,11 @@
       if (!response.ok) throw new Error("Cart fetch failed: HTTP " + response.status);
       return response.json();
     });
+  }
+
+  function nextCartSequence() {
+    cartSequence += 1;
+    return cartSequence;
   }
 
   function withInternalCartMutation(callback) {
@@ -207,16 +214,44 @@
       "</aside>";
 
     document.documentElement.classList.toggle("lavoc-cart-lock", state.open);
+    document.body.classList.toggle("lavoc-cart-lock", state.open);
   }
 
-  function refreshSections() {
+  function updateThemeCartIndicators(cart) {
+    var count = Number(cart && cart.item_count ? cart.item_count : 0);
+    var text = String(count);
+
+    document.querySelectorAll("[data-cart-count], .cart-count, .header__cart-count, .site-header__cart-count").forEach(function (node) {
+      if (mount.contains(node)) return;
+      node.textContent = text;
+      node.toggleAttribute("hidden", count === 0);
+    });
+
+    document.querySelectorAll(".cart-count-bubble, [data-cart-count-bubble]").forEach(function (bubble) {
+      if (mount.contains(bubble)) return;
+      bubble.toggleAttribute("hidden", count === 0);
+      bubble.style.display = count === 0 ? "none" : "";
+
+      var visibleCount =
+        bubble.querySelector("[data-cart-count]") ||
+        bubble.querySelector("span[aria-hidden='true']") ||
+        bubble.querySelector("span:not(.visually-hidden)");
+
+      if (visibleCount) visibleCount.textContent = text;
+    });
+  }
+
+  function refreshSections(cart) {
+    var requestSequence = sectionSequence += 1;
+    updateThemeCartIndicators(cart || state.cart || { item_count: 0 });
+
     return fetch(cartUrl("cart?sections=cart-drawer,cart-icon-bubble"), { cache: "no-store" })
       .then(function (response) {
         if (!response.ok) return null;
         return response.json();
       })
       .then(function (sections) {
-        if (!sections) return;
+        if (!sections || requestSequence !== sectionSequence) return;
         if (sections["cart-icon-bubble"]) {
           var bubble = document.getElementById("cart-icon-bubble");
           var parser = new DOMParser();
@@ -224,19 +259,24 @@
           var nextBubble = doc.getElementById("cart-icon-bubble");
           if (bubble && nextBubble) bubble.outerHTML = nextBubble.outerHTML;
         }
+        updateThemeCartIndicators(cart || state.cart || { item_count: 0 });
       })
       .catch(function () {});
   }
 
-  function refreshCart() {
-    return fetchCart().then(applyCart);
+  function refreshCart(sequence) {
+    var requestSequence = sequence || nextCartSequence();
+    return fetchCart().then(function (cart) {
+      return applyCart(cart, requestSequence);
+    });
   }
 
-  function applyCart(cart) {
+  function applyCart(cart, sequence) {
+    if (sequence && sequence < cartSequence) return cart;
     state.cart = cart;
     render();
     document.dispatchEvent(new CustomEvent("lavoc:cart:updated", { detail: { cart: cart } }));
-    refreshSections();
+    refreshSections(cart);
     return cart;
   }
 
@@ -249,13 +289,40 @@
   }
 
   function closeDrawer() {
+    if (nativeOpenTimer) window.clearTimeout(nativeOpenTimer);
+    nativeOpenTimer = null;
+    state.busy = false;
     state.open = false;
+    clearNativeCartLocks();
     render();
+  }
+
+  function clearNativeCartLocks() {
+    [
+      "overflow-hidden",
+      "no-scroll",
+      "scroll-locked",
+      "modal-open",
+      "drawer-open",
+      "js-drawer-open",
+      "js-drawer-open-cart",
+      "cart-drawer-open",
+      "cart-notification-open"
+    ].forEach(function (className) {
+      document.documentElement.classList.remove(className);
+      document.body.classList.remove(className);
+    });
+
+    if (!state.open) {
+      document.documentElement.style.removeProperty("overflow");
+      document.body.style.removeProperty("overflow");
+    }
   }
 
   function closeNativeDrawer() {
     document.documentElement.classList.add("lavoc-native-cart-suppressed");
     document.body.classList.add("lavoc-native-cart-suppressed");
+    clearNativeCartLocks();
 
     [
       "cart-drawer",
@@ -292,6 +359,7 @@
   function scheduleOpenAfterCartMutation() {
     if (nativeOpenTimer) window.clearTimeout(nativeOpenTimer);
     nativeOpenTimer = window.setTimeout(function () {
+      nativeOpenTimer = null;
       closeNativeDrawer();
       state.open = true;
       state.busy = true;
@@ -304,6 +372,7 @@
   }
 
   function changeLine(lineKey, quantity) {
+    var requestSequence = nextCartSequence();
     state.busy = true;
     render();
     return withInternalCartMutation(function () {
@@ -317,7 +386,9 @@
         if (!response.ok) throw new Error("Cart change failed");
         return response.json();
       })
-      .then(applyCart)
+      .then(function (cart) {
+        return applyCart(cart, requestSequence);
+      })
       .finally(function () {
         state.busy = false;
         render();
@@ -325,6 +396,7 @@
   }
 
   function addUpsell(variantId) {
+    var requestSequence = nextCartSequence();
     state.busy = true;
     render();
     return withInternalCartMutation(function () {
@@ -336,7 +408,7 @@
     })
       .then(function (response) {
         if (!response.ok) throw new Error("Upsell add failed");
-        return refreshCart();
+        return refreshCart(requestSequence);
       })
       .finally(function () {
         state.busy = false;
@@ -378,14 +450,6 @@
     event.stopPropagation();
     event.stopImmediatePropagation();
     openDrawer();
-  }, true);
-
-  document.addEventListener("submit", function (event) {
-    var target = event.target;
-    if (!(target instanceof HTMLFormElement)) return;
-    var action = target.getAttribute("action") || "";
-    if (!/\/cart\/add/.test(action) || !state.ready || state.config.enabled === false) return;
-    scheduleOpenAfterCartMutation();
   }, true);
 
   var originalFetch = window.fetch;
