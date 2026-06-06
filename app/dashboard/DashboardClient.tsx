@@ -31,9 +31,11 @@ import { DEFAULT_CART_DRAWER_CONFIG } from "@/lib/schemas";
 type ProductVariantOption = {
   productGid: string;
   productTitle: string;
+  productHandle: string | null;
   variantGid: string;
   variantTitle: string | null;
   price: string | null;
+  compareAtPrice: string | null;
   imageUrl: string | null;
 };
 
@@ -76,6 +78,12 @@ function priceToCents(price: string | null) {
   return Number.isFinite(amount) ? Math.round(amount * 100) : null;
 }
 
+function formatVariantPrice(variant: ProductVariantOption) {
+  const priceCents = priceToCents(variant.price);
+  if (priceCents == null) return "No price";
+  return `$${centsToDollarInput(priceCents)}`;
+}
+
 function countryCodesToInput(countries: string[]) {
   return countries.join(", ");
 }
@@ -97,7 +105,7 @@ function buildFbtProduct(variant: ProductVariantOption): FbtProductConfig {
     variant_title: variant.variantTitle,
     image_url: variant.imageUrl,
     price_cents: priceToCents(variant.price),
-    compare_at_cents: null,
+    compare_at_cents: priceToCents(variant.compareAtPrice),
     badge_text: null,
     enabled: true,
   };
@@ -147,6 +155,7 @@ export default function DashboardClient({ shop }: Props) {
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
   const [searchResults, setSearchResults] = useState<ProductVariantOption[]>([]);
 
   useEffect(() => {
@@ -197,16 +206,23 @@ export default function DashboardClient({ shop }: Props) {
   }, []);
 
   const searchProducts = useCallback(async () => {
-    if (!query.trim()) return;
+    const searchQuery = query.trim();
     setSearching(true);
-    setStatus("Searching products");
+    setHasSearched(true);
+    setStatus(searchQuery ? "Searching products" : "Loading recent products");
 
     try {
-      const response = await adminFetch(`/api/admin/products/search?q=${encodeURIComponent(query)}`);
+      const response = await adminFetch(
+        `/api/admin/products/search?q=${encodeURIComponent(searchQuery)}`
+      );
       if (!response.ok) throw new Error(`Search failed: ${response.status}`);
       const payload = (await response.json()) as { variants: ProductVariantOption[] };
       setSearchResults(payload.variants);
-      setStatus(`${payload.variants.length} variants found`);
+      setStatus(
+        searchQuery
+          ? `${payload.variants.length} variants found`
+          : `${payload.variants.length} recent variants loaded`
+      );
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Search failed");
     } finally {
@@ -386,7 +402,7 @@ export default function DashboardClient({ shop }: Props) {
           product_title: variant.productTitle,
           image_url: variant.imageUrl ?? undefined,
           price_cents: priceToCents(variant.price),
-          compare_at_cents: priceToCents(variant.price),
+          compare_at_cents: priceToCents(variant.compareAtPrice),
           teaser_enabled: true,
         };
 
@@ -768,15 +784,40 @@ export default function DashboardClient({ shop }: Props) {
                         {reward.type === "free_gift" ? (
                           <BlockStack gap="300">
                             <InlineStack align="space-between" blockAlign="center">
-                              <Text as="p" variant="bodyMd">
-                                {reward.product_title
-                                  ? `Gift: ${reward.product_title}`
-                                  : "No gift product selected"}
-                              </Text>
-                              <Badge tone={reward.variant_id ? "success" : "attention"}>
-                                {reward.variant_id ? "Gift selected" : "Needs gift"}
-                              </Badge>
+                              <BlockStack gap="100">
+                                <Text as="p" variant="bodyMd">
+                                  Free gift product
+                                </Text>
+                                <Text as="p" variant="bodySm" tone="subdued">
+                                  Search products below, then choose {`Use as gift R${index + 1}`}.
+                                </Text>
+                              </BlockStack>
+                              <InlineStack gap="200" blockAlign="center">
+                                <Badge tone={reward.variant_id ? "success" : "attention"}>
+                                  {reward.variant_id ? "Gift selected" : "Needs gift"}
+                                </Badge>
+                                <Button onClick={searchProducts} loading={searching}>
+                                  Load products
+                                </Button>
+                              </InlineStack>
                             </InlineStack>
+                            {reward.product_title ? (
+                              <InlineStack gap="300" blockAlign="center">
+                                <Thumbnail
+                                  alt={reward.product_title}
+                                  source={reward.image_url || ""}
+                                  size="small"
+                                />
+                                <BlockStack gap="100">
+                                  <Text as="p" variant="bodyMd">
+                                    {reward.product_title}
+                                  </Text>
+                                  <Text as="p" variant="bodySm" tone="subdued">
+                                    Variant {reward.variant_id}
+                                  </Text>
+                                </BlockStack>
+                              </InlineStack>
+                            ) : null}
                             <InlineStack gap="300">
                               <Box width="48%">
                                 <TextField
@@ -898,53 +939,80 @@ export default function DashboardClient({ shop }: Props) {
                   <InlineStack gap="300" blockAlign="end">
                     <Box width="70%">
                       <TextField
-                        label="Search products"
+                        label="Search or load products"
                         value={query}
                         onChange={setQuery}
+                        helpText="Leave blank and click Search to preview recent products. Use results for upsells, frequently bought together, or a free gift reward."
                         autoComplete="off"
                       />
                     </Box>
                     <Button onClick={searchProducts} loading={searching}>
-                      Search
+                      {query.trim() ? "Search" : "Load products"}
                     </Button>
                   </InlineStack>
-                  {searchResults.map((variant) => (
-                    <InlineStack
-                      key={variant.variantGid}
-                      align="space-between"
-                      blockAlign="center"
-                    >
-                      <InlineStack gap="300" blockAlign="center">
-                        <Thumbnail
-                          alt={variant.productTitle}
-                          source={variant.imageUrl || ""}
-                          size="small"
-                        />
-                        <BlockStack gap="100">
-                          <Text as="p" variant="bodyMd">
-                            {variant.productTitle}
-                          </Text>
-                          <Text as="p" variant="bodySm" tone="subdued">
-                            {variant.variantTitle || "Default variant"} · {variant.price ?? ""}
-                          </Text>
-                        </BlockStack>
-                      </InlineStack>
-                      <InlineStack gap="200">
-                        <Button onClick={() => addUpsell(variant)}>Add upsell</Button>
-                        <Button onClick={() => addFbtProduct(variant)}>Add FBT</Button>
-                        {gamification.rewards.map((reward, rewardIndex) =>
-                          reward.type === "free_gift" ? (
-                            <Button
-                              key={`${reward.id}-${variant.variantGid}`}
-                              onClick={() => selectVariantAsRewardGift(rewardIndex, variant)}
-                            >
-                              {`Gift R${rewardIndex + 1}`}
-                            </Button>
-                          ) : null
-                        )}
-                      </InlineStack>
+                  <BlockStack gap="300">
+                    <InlineStack align="space-between" blockAlign="center">
+                      <Text as="h3" variant="headingSm">
+                        Product results
+                      </Text>
+                      {searchResults.length > 0 ? (
+                        <Badge>{`${searchResults.length} variants`}</Badge>
+                      ) : null}
                     </InlineStack>
-                  ))}
+                    {searchResults.length === 0 ? (
+                      <Text as="p" tone="subdued">
+                        {hasSearched
+                          ? "No products found. Try a broader search term or leave search blank to load recent products."
+                          : "Load products to preview selectable variants."}
+                      </Text>
+                    ) : (
+                      searchResults.map((variant) => (
+                        <div
+                          key={variant.variantGid}
+                          style={{
+                            border: "1px solid #dfe3e8",
+                            borderRadius: 8,
+                            padding: 12,
+                          }}
+                        >
+                          <InlineStack align="space-between" blockAlign="center">
+                            <InlineStack gap="300" blockAlign="center">
+                              <Thumbnail
+                                alt={variant.productTitle}
+                                source={variant.imageUrl || ""}
+                                size="small"
+                              />
+                              <BlockStack gap="100">
+                                <Text as="p" variant="bodyMd">
+                                  {variant.productTitle}
+                                </Text>
+                                <Text as="p" variant="bodySm" tone="subdued">
+                                  {variant.variantTitle || "Default variant"} ·{" "}
+                                  {formatVariantPrice(variant)}
+                                </Text>
+                              </BlockStack>
+                            </InlineStack>
+                            <InlineStack gap="200">
+                              {gamification.rewards.map((reward, rewardIndex) =>
+                                reward.type === "free_gift" ? (
+                                  <Button
+                                    key={`${reward.id}-${variant.variantGid}`}
+                                    onClick={() =>
+                                      selectVariantAsRewardGift(rewardIndex, variant)
+                                    }
+                                  >
+                                    {`Use as gift R${rewardIndex + 1}`}
+                                  </Button>
+                                ) : null
+                              )}
+                              <Button onClick={() => addFbtProduct(variant)}>Add FBT</Button>
+                              <Button onClick={() => addUpsell(variant)}>Add upsell</Button>
+                            </InlineStack>
+                          </InlineStack>
+                        </div>
+                      ))
+                    )}
+                  </BlockStack>
                   <Divider />
                   {upsells.length === 0 ? (
                     <Text as="p" tone="subdued">

@@ -8,12 +8,14 @@ type ProductSearchResponse = {
       nodes?: Array<{
         id: string;
         title: string;
+        handle?: string | null;
         featuredImage?: { url?: string | null } | null;
         variants?: {
           nodes?: Array<{
             id: string;
             title: string;
-            price: string;
+            price?: string | null;
+            compareAtPrice?: string | null;
           }>;
         };
       }>;
@@ -22,11 +24,12 @@ type ProductSearchResponse = {
 };
 
 const PRODUCT_SEARCH_QUERY = `#graphql
-  query CartDrawerProductSearch($query: String!) {
-    products(first: 10, query: $query) {
+  query CartDrawerProductSearch($query: String) {
+    products(first: 20, query: $query, sortKey: TITLE) {
       nodes {
         id
         title
+        handle
         featuredImage {
           url
         }
@@ -35,6 +38,7 @@ const PRODUCT_SEARCH_QUERY = `#graphql
             id
             title
             price
+            compareAtPrice
           }
         }
       }
@@ -42,12 +46,43 @@ const PRODUCT_SEARCH_QUERY = `#graphql
   }
 `;
 
+function sanitizeProductSearchQuery(query: string) {
+  return query.replace(/[\\"]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+async function fetchProductVariants(
+  session: NonNullable<Awaited<ReturnType<typeof getShopSession>>>,
+  query: string | null
+) {
+  const client = adminGraphqlClient(session);
+  const response = (await client.query({
+    data: {
+      query: PRODUCT_SEARCH_QUERY,
+      variables: { query },
+    },
+  })) as ProductSearchResponse;
+
+  return (
+    response.data?.products?.nodes?.flatMap((product) =>
+      (product.variants?.nodes ?? []).map((variant) => ({
+        productGid: product.id,
+        productTitle: product.title,
+        productHandle: product.handle ?? null,
+        variantGid: variant.id,
+        variantTitle: variant.title === "Default Title" ? null : variant.title,
+        price: variant.price ?? null,
+        compareAtPrice: variant.compareAtPrice ?? null,
+        imageUrl: product.featuredImage?.url ?? null,
+      }))
+    ) ?? []
+  );
+}
+
 export async function GET(request: NextRequest) {
   const auth = await requireAuth(request);
   if (auth instanceof NextResponse) return auth;
 
-  const query = request.nextUrl.searchParams.get("q")?.trim();
-  if (!query) return NextResponse.json({ variants: [] });
+  const query = sanitizeProductSearchQuery(request.nextUrl.searchParams.get("q") ?? "");
 
   const session = await getShopSession(auth.shop);
   if (!session) {
@@ -55,25 +90,11 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const client = adminGraphqlClient(session);
-    const response = (await client.query({
-      data: {
-        query: PRODUCT_SEARCH_QUERY,
-        variables: { query: `title:*${query}*` },
-      },
-    })) as ProductSearchResponse;
+    let variants = await fetchProductVariants(session, query || null);
 
-    const variants =
-      response.data?.products?.nodes?.flatMap((product) =>
-        (product.variants?.nodes ?? []).map((variant) => ({
-          productGid: product.id,
-          productTitle: product.title,
-          variantGid: variant.id,
-          variantTitle: variant.title === "Default Title" ? null : variant.title,
-          price: variant.price,
-          imageUrl: product.featuredImage?.url ?? null,
-        }))
-      ) ?? [];
+    if (query && variants.length === 0) {
+      variants = await fetchProductVariants(session, null);
+    }
 
     return NextResponse.json({ variants });
   } catch (error) {
