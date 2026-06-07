@@ -12,6 +12,8 @@
     open: false,
     busy: false,
     timerEndsAt: null,
+    fbtAddingVariantId: null,
+    fbtErrorsByVariantId: {},
     giftAddingRewardId: null,
     giftAddedRewardIds: {},
     giftClaimedRewardIds: {},
@@ -501,13 +503,9 @@
   function fbtHtml() {
     var fbt = getFrequentlyBoughtTogether();
     if (!fbt || !fbt.products || !fbt.products.length) return "";
-    var cart = state.cart || { items: [] };
-    var cartVariantIds = (cart.items || []).map(function (item) {
-      return String(item.variant_id);
-    });
     var products = fbt.products
       .filter(function (item) {
-        return item.enabled !== false && cartVariantIds.indexOf(String(item.variant_id)) === -1;
+        return item.enabled !== false;
       })
       .slice(0, Math.max(1, Number(fbt.display_limit || 4)));
     if (!products.length) return "";
@@ -518,6 +516,9 @@
       "</h3>" +
       products
         .map(function (item) {
+          var variantId = String(item.variant_id || "");
+          var adding = state.fbtAddingVariantId === variantId;
+          var error = state.fbtErrorsByVariantId[variantId];
           return (
             '<article class="lavoc-cart-fbt-item">' +
             (item.image_url ? '<img alt="' + escapeHtml(item.title) + '" src="' + escapeHtml(item.image_url) + '">' : "<div></div>") +
@@ -528,9 +529,15 @@
             '<div class="lavoc-cart-fbt-details">' +
             escapeHtml(fbt.details_text || "Show details") +
             "</div></div>" +
-            '<button type="button" data-lavoc-add="' + escapeHtml(item.variant_id) + '">' +
-            escapeHtml(fbt.add_button_text || "Add to cart") +
-            "</button></article>"
+            '<div class="lavoc-cart-fbt-action"><button type="button" data-lavoc-add="' +
+            escapeHtml(variantId) +
+            '"' +
+            (adding ? " disabled" : "") +
+            ">" +
+            escapeHtml(adding ? "Adding..." : fbt.add_button_text || "Add to cart") +
+            "</button>" +
+            (error ? '<div class="lavoc-cart-fbt-error">' + escapeHtml(error) + "</div>" : "") +
+            "</div></article>"
           );
         })
         .join("") +
@@ -848,7 +855,23 @@
   }
 
   function addRecommendation(variantId) {
-    return addVariantToCart(variantId);
+    var normalizedVariantId = String(variantId || "");
+    if (!normalizedVariantId) return Promise.reject(new Error("Missing product variant"));
+
+    state.fbtAddingVariantId = normalizedVariantId;
+    delete state.fbtErrorsByVariantId[normalizedVariantId];
+    render();
+
+    return addVariantToCart(normalizedVariantId)
+      .catch(function (error) {
+        state.fbtErrorsByVariantId[normalizedVariantId] =
+          error && error.message ? error.message : "Unable to add this product.";
+        throw error;
+      })
+      .finally(function () {
+        state.fbtAddingVariantId = null;
+        render();
+      });
   }
 
   function addRewardGift(rewardId) {
@@ -929,7 +952,8 @@
 
     var add = target.closest("[data-lavoc-add]");
     if (add) {
-      addRecommendation(add.getAttribute("data-lavoc-add"));
+      event.preventDefault();
+      addRecommendation(add.getAttribute("data-lavoc-add")).catch(function () {});
       return;
     }
 
