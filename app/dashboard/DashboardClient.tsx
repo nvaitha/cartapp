@@ -209,6 +209,7 @@ type ProductPickerDropdownProps = {
   helpText: string;
   triggerLabel: string;
   actionLabel: string;
+  productType?: string;
   emptyText?: string;
   selectedCount?: number;
   closeOnSelect?: boolean;
@@ -220,6 +221,7 @@ function ProductPickerDropdown({
   helpText,
   triggerLabel,
   actionLabel,
+  productType,
   emptyText = "No products found.",
   selectedCount,
   closeOnSelect = false,
@@ -240,9 +242,14 @@ function ProductPickerDropdown({
       setError("");
 
       try {
-        const response = await adminFetch(
-          `/api/admin/products/search?q=${encodeURIComponent(searchQuery)}&limit=20&status=all`
-        );
+        const params = new URLSearchParams({
+          q: searchQuery,
+          limit: "20",
+          status: "all",
+        });
+        if (productType) params.set("product_type", productType);
+
+        const response = await adminFetch(`/api/admin/products/search?${params.toString()}`);
         if (!response.ok) throw new Error(`Product search failed: HTTP ${response.status}`);
         const payload = (await response.json()) as ProductSearchPayload;
         setProducts(payload.products ?? []);
@@ -255,7 +262,7 @@ function ProductPickerDropdown({
         setSearching(false);
       }
     },
-    [query]
+    [productType, query]
   );
 
   const toggleOpen = useCallback(() => {
@@ -1125,13 +1132,14 @@ export default function DashboardClient({ shop }: Props) {
 
                                   <ProductPickerDropdown
                                     label="Select free gifts"
-                                    helpText="Search and select the exact product variant to reward when this goal is unlocked."
+                                    helpText="Only Shopify products with Product type free_gift appear here. Use a dedicated $0 gift variant."
                                     triggerLabel={
                                       reward.variant_id ? "Change gift" : "Select free products"
                                     }
                                     actionLabel="Select gift"
+                                    productType="free_gift"
                                     closeOnSelect
-                                    emptyText="No gift products found."
+                                    emptyText="No gift products found. Set the Shopify product Type to free_gift, keep it active, and make sure the gift variant is available."
                                     onSelect={(variant) => {
                                       selectVariantAsRewardGift(index, variant);
                                       setStatus(`Gift R${index + 1} selected`);

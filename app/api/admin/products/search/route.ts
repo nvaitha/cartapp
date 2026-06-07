@@ -16,6 +16,7 @@ type RestProduct = {
   id: number;
   title: string;
   status?: string;
+  product_type?: string;
   images?: Array<{ src: string }>;
   variants?: RestVariant[];
 };
@@ -44,6 +45,15 @@ function requestedStatuses(request: NextRequest) {
   if (statusParam === "all") return allowedStatuses;
   if (allowedStatuses.includes(statusParam)) return [statusParam];
   return allowedStatuses;
+}
+
+function requestedProductType(request: NextRequest) {
+  return request.nextUrl.searchParams.get("product_type")?.trim() ?? "";
+}
+
+function productMatchesType(product: RestProduct, productType: string) {
+  if (!productType) return true;
+  return String(product.product_type ?? "").trim().toLowerCase() === productType.toLowerCase();
 }
 
 function productMatchesQuery(product: RestProduct, query: string) {
@@ -88,7 +98,8 @@ export async function GET(request: NextRequest) {
   const q = request.nextUrl.searchParams.get("q")?.trim() ?? "";
   const limit = requestedLimit(request);
   const statuses = requestedStatuses(request);
-  const fetchLimit = q ? "250" : String(limit);
+  const productType = requestedProductType(request);
+  const fetchLimit = q || productType ? "250" : String(limit);
 
   try {
     const client = adminRestClient(session);
@@ -98,8 +109,9 @@ export async function GET(request: NextRequest) {
           path: "products",
           query: {
             limit: fetchLimit,
-            fields: "id,title,variants,images,status",
+            fields: "id,title,product_type,variants,images,status",
             status,
+            ...(productType ? { product_type: productType } : {}),
           },
         })
       )
@@ -116,6 +128,7 @@ export async function GET(request: NextRequest) {
     }
 
     const products = Array.from(productsById.values())
+      .filter((product) => productMatchesType(product, productType))
       .filter((product) => productMatchesQuery(product, q))
       .slice(0, limit)
       .map(normalizeProduct);
