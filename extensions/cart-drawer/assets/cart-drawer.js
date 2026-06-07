@@ -421,15 +421,19 @@
     var adding = state.giftAddingRewardId === giftReward.id;
     var unavailable = rewardUnavailable(giftReward);
     var error = state.giftErrorsByRewardId[giftReward.id];
+    var templateValues = {
+      reward: giftReward.title,
+      amount_left: money(Math.max(0, threshold - cart.total_price)),
+      goal: money(threshold)
+    };
     var message = included
-      ? (giftReward.subscription_text || gamification.subscription_message || "Your gift is included with subscription.")
+      ? replaceTemplate(
+          giftReward.subscription_text || gamification.subscription_message || "{{reward}} is already included with subscription.",
+          templateValues
+        )
       : unlocked
-        ? replaceTemplate(giftReward.after_text, { reward: giftReward.title, amount_left: money(0), goal: money(threshold) })
-        : replaceTemplate(giftReward.before_text, {
-            reward: giftReward.title,
-            amount_left: money(Math.max(0, threshold - cart.total_price)),
-            goal: money(threshold)
-          });
+        ? replaceTemplate(giftReward.after_text, templateValues)
+        : replaceTemplate(giftReward.before_text, templateValues);
 
     return (
       '<section class="lavoc-cart-gift">' +
@@ -457,6 +461,8 @@
           "</button>"
         : added
           ? '<button type="button" class="lavoc-cart-gift-added" disabled>Gift added</button>'
+          : !unlocked && !included
+            ? '<button type="button" disabled>Unlock gift</button>'
           : "") +
       (unlocked && giftReward.price_cents > 0 && !cleanDiscountCode(giftReward.discount_code)
         ? '<div class="lavoc-cart-gift-error">This gift needs a Shopify discount code to be free at checkout.</div>'
