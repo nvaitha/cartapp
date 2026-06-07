@@ -328,6 +328,7 @@
 
     for (var index = 0; index < rewards.length; index += 1) {
       var reward = rewards[index];
+      if (rewardIncludedBySubscription(reward, gamification, cart)) continue;
       var code = cleanDiscountCode(reward.discount_code);
       if (!code) continue;
       if (reward.type === "free_gift" && reward.variant_id && !cartHasVariant(reward.variant_id)) continue;
