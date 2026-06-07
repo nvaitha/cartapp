@@ -285,23 +285,27 @@
       return Math.min(100, Math.max(0, Math.round((total / onlyGoal) * 100)));
     }
 
-    var stepSize = 100 / rewards.length;
+    function milestonePosition(index) {
+      return ((index + 0.5) / rewards.length) * 100;
+    }
+
     if (total <= thresholds[0]) {
       var firstGoal = Math.max(1, thresholds[0]);
-      return Math.min(stepSize, Math.max(0, Math.round((total / firstGoal) * stepSize)));
+      var firstFill = milestonePosition(0);
+      return Math.min(firstFill, Math.max(0, (total / firstGoal) * firstFill));
     }
 
     for (var index = 1; index < thresholds.length; index += 1) {
       var previousGoal = thresholds[index - 1];
       var currentGoal = Math.max(previousGoal + 1, thresholds[index]);
-      var previousFill = stepSize * index;
-      var currentFill = stepSize * (index + 1);
+      var previousFill = milestonePosition(index - 1);
+      var currentFill = milestonePosition(index);
 
       if (total < currentGoal) {
         var segmentProgress = (total - previousGoal) / (currentGoal - previousGoal);
         return Math.min(
           currentFill,
-          Math.max(previousFill, Math.round(previousFill + segmentProgress * (currentFill - previousFill)))
+          Math.max(previousFill, previousFill + segmentProgress * (currentFill - previousFill))
         );
       }
     }
