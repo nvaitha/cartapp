@@ -1184,6 +1184,17 @@ export default function DashboardClient({ shop }: Props) {
                                   </InlineStack>
                                 </BlockStack>
                               ) : null}
+                              {reward.type === "free_shipping" ? (
+                                <TextField
+                                  label="Free shipping discount code"
+                                  value={reward.discount_code ?? ""}
+                                  onChange={(value) =>
+                                    updateReward(index, "discount_code", value)
+                                  }
+                                  helpText="Create a Shopify free shipping discount code with this spend goal as the minimum purchase. The drawer applies this code when checkout starts."
+                                  autoComplete="off"
+                                />
+                              ) : null}
                               {reward.type === "discount" ? (
                                 <TextField
                                   label="Discount code or label"

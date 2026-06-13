@@ -171,6 +171,7 @@ export const DEFAULT_CART_DRAWER_CONFIG = {
           after_text: "🎉 You've unlocked {{reward}}",
           subscription_text: "{{reward}} is already included with subscription.",
           teaser_enabled: false,
+          discount_code: "",
         },
         {
           id: "reward-discount",
